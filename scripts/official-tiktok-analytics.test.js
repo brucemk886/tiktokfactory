@@ -408,3 +408,26 @@ async function readUploadBodyBytes(body) {
   }
   return Buffer.from(body || "").length;
 }
+
+
+test('local account directory reads only on manual refresh and persists exact membership across service instances',async t=>{
+ const workDir=fs.mkdtempSync(path.join(os.tmpdir(),'official-directory-'));t.after(()=>fs.rmSync(workDir,{recursive:true,force:true}));
+ let calls=0,live=[{schema:'tiktok:old',profile:{username:'old'}},{schema:'tiktok:keep',profile:{username:'keep'}}];
+ const config={workDir,networkRetryDelays:[],fetchImpl:async()=>{calls++;return jsonResponse({accounts:live,hasMore:false});}};
+ const service=createOfficialTikTokAnalyticsService(config);service.saveSettings({baseUrl:'https://hub.test',apiKey:'test-key'});
+ assert.equal((await service.listAccountDirectory()).accounts.length,0);assert.equal(calls,0);
+ assert.equal((await service.listAccountDirectory({refresh:true})).accounts.length,2);assert.equal(calls,2);
+ live=[live[1]];
+ const second=createOfficialTikTokAnalyticsService(config);
+ assert.equal((await second.listAccountDirectory()).accounts.length,2);assert.equal(calls,2);
+ assert.equal((await second.listAccountDirectory({refresh:true})).accounts.length,1);assert.equal(calls,4);
+ assert.equal((await service.listAccountDirectory()).accounts.length,1);assert.equal(calls,4);
+});
+
+test('local incomplete refresh preserves the last complete directory snapshot',async t=>{
+ const workDir=fs.mkdtempSync(path.join(os.tmpdir(),'official-directory-failure-'));t.after(()=>fs.rmSync(workDir,{recursive:true,force:true}));let fail=false;
+ const service=createOfficialTikTokAnalyticsService({workDir,networkRetryDelays:[],fetchImpl:async()=>jsonResponse(fail?{accounts:[{schema:'tiktok:partial'}],hasMore:true,nextCursor:''}:{accounts:[{schema:'tiktok:kept'}],hasMore:false})});
+ service.saveSettings({baseUrl:'https://hub.test',apiKey:'test-key'});
+ await service.listAccountDirectory({refresh:true});fail=true;
+ const result=await service.listAccountDirectory({refresh:true});assert.equal(result.directoryComplete,false);assert.equal(result.accounts[0].schema,'tiktok:kept');assert.equal((await service.listAccountDirectory()).accounts[0].schema,'tiktok:kept');
+});

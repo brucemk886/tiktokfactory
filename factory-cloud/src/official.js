@@ -30,6 +30,7 @@ import { listPublishRecords } from "./publish-records-store.js";
 import { ensurePublishWebhook, readPublishWebhookState } from "./publish-webhook.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
+import { mergeAccountDirectory, directorySnapshotAccounts, attachDirectoryRisk } from "../../scripts/official-account-directory.js";
 import {
   accountsFromLatestArchive,
   directoryAccountsFromRows,
@@ -392,74 +393,65 @@ function archiveAccountRow(account) {
   };
 }
 
+const ACCOUNT_DIRECTORY_KEY = 'official-account-directory';
+
 export async function listAllAccounts(env, db, refresh = false) {
-  if (refresh) {
-    await refreshOfficialArchive(env, db);
-  }
   const store = await loadGroupStore(db);
+  const settings = await publicOfficialSettings(db, env);
+  const saved = await kvGet(db, ACCOUNT_DIRECTORY_KEY, null);
+  const snapshot = saved?.version === 1 && Array.isArray(saved.accounts)
+    && saved.baseUrl === settings.baseUrl && saved.settingsUpdatedAt === settings.updatedAt ? saved : null;
   const archivedAccounts = directoryAccountsFromRows(await listAccountDirectory(db));
+  const response = async (accounts, complete, source, warning = '', updatedAt = 0) => attachAccounts({
+    connected: true, source, directoryComplete: complete, directoryWarning: warning,
+    directoryCached: source !== 'live-refresh', directoryUpdatedAt: updatedAt,
+    accounts: await withPublishFollowers(db, accounts),
+  }, store);
+  // Page entry and local group edits read a saved snapshot; only the refresh button reads the Hub.
+  if (!refresh) return snapshot
+    ? response(snapshot.accounts, true, 'directory-cache', '', snapshot.updatedAt)
+    : response(archivedAccounts, false, 'archive-fallback', '尚未保存当前授权目录，请点击“刷新账号”从中台读取。');
+
   let liveAccounts = [];
-  let liveError = null;
-  // The analytics archive can legitimately lag behind newly authorized
-  // accounts. Always merge the current Signal Desk directory so a normal page
-  // reload does not shrink the account list that a manual refresh just showed.
   try {
-    let cursor = "";
+    let cursor = '';
     for (let page = 0; page < 100; page++) {
-      const params = new URLSearchParams({limit:"100", cursor});
-      const data = await signalDesk(env, db, `/api/integrations/local-factory/accounts?${params}`);
-      if (!Array.isArray(data.accounts)) throw Object.assign(new Error("账号目录响应无效。"), {statusCode:502});
+      const params = new URLSearchParams({ limit: '100', cursor });
+      const data = await signalDesk(env, db, '/api/integrations/local-factory/accounts?' + params);
+      if (!Array.isArray(data.accounts)) throw Object.assign(new Error('账号目录响应无效。'), { statusCode: 502 });
       liveAccounts.push(...data.accounts);
       if (!data.hasMore) break;
-      if (!data.nextCursor || data.nextCursor <= cursor || page === 99) throw Object.assign(new Error("账号目录分页未完成。"), {statusCode:502});
+      if (!data.nextCursor || data.nextCursor <= cursor || page === 99) throw Object.assign(new Error('账号目录分页未完成。'), { statusCode: 502 });
       cursor = data.nextCursor;
     }
   } catch (error) {
-    liveError = error;
-    console.warn("official-directory-fallback", JSON.stringify({status:Number(error.statusCode)||502,received:liveAccounts.length,archived:archivedAccounts.length}));
+    console.warn('official-directory-fallback', JSON.stringify({ status: Number(error.statusCode) || 502, received: liveAccounts.length, archived: archivedAccounts.length }));
+    if (!snapshot && !archivedAccounts.length) throw error;
+    return response(snapshot?.accounts || mergeAccountDirectory(archivedAccounts, liveAccounts, { complete: false }), false,
+      snapshot ? 'directory-cache-fallback' : (liveAccounts.length ? 'archive+partial-live' : 'archive-fallback'),
+      '中台授权目录刷新失败，已保留上次保存或已有归档，数量不代表中台授权总数。', snapshot?.updatedAt || 0);
   }
-  if (liveError && !archivedAccounts.length) throw liveError;
   const accounts = await withPublishFollowers(db, mergeOfficialAccountDirectory(archivedAccounts, liveAccounts));
-  return attachAccounts({
-    connected: true,
-    source: liveError ? (liveAccounts.length ? "archive+partial-live" : "archive-fallback") : (refresh ? "archive-refresh+live" : "archive+live"),
-    directoryComplete: !liveError,
-    directoryWarning: liveError ? "实时授权目录读取失败，当前仅显示已有归档或部分结果，数量不代表中台授权总数。请稍后刷新。" : "",
-    accounts
-  }, store);
+  // Refresh historical publishing risk only on this explicit read, and never widen the directory scope.
+  const publish = await signalDeskAllAccounts(env, db).catch(() => ({ accounts: [] }));
+  const enriched = attachDirectoryRisk(accounts, publish.accounts);
+  const updatedAt = Date.now();
+  const storedAccounts = directorySnapshotAccounts(enriched);
+  await kvSet(db, ACCOUNT_DIRECTORY_KEY, { version: 1, accounts: storedAccounts, updatedAt, baseUrl: settings.baseUrl, settingsUpdatedAt: settings.updatedAt });
+  return response(storedAccounts, true, 'live-refresh', '', updatedAt);
 }
 
 export function mergeOfficialAccountDirectory(archivedAccounts = [], liveAccounts = []) {
-  const merged = [];
-  const known = new Set();
-  for (const account of [...archivedAccounts, ...liveAccounts]) {
-    const keys = officialDirectoryKeys(account);
-    if (keys.some((key) => known.has(key))) continue;
-    merged.push(account);
-    keys.forEach((key) => known.add(key));
-  }
-  return merged;
-}
-
-function officialDirectoryKeys(account = {}) {
-  return Array.from(new Set([
-    account.schema,
-    account.accountKey,
-    account.connectionId,
-    account.id,
-    account.username,
-    account.profile?.username
-  ].map((value) => String(value || "").trim().replace(/^@/, "")).filter(Boolean).flatMap((value) => (
-    value.toLowerCase().startsWith("tiktok:") ? [value, value.slice(7)] : [value, `tiktok:${value}`]
-  ))));
+  return mergeAccountDirectory(archivedAccounts, liveAccounts);
 }
 
 async function publicOfficialSettings(db, env) {
   const settings = await kvGet(db, "official-settings", {});
   const envKey = String(env.SIGNAL_DESK_BRIDGE_KEY || "").trim();
+  const baseUrl = settings.baseUrl || env.SIGNAL_DESK_BASE_URL || "https://tiktokaitool.com";
   return {
-    configured: Boolean((settings.baseUrl || env.SIGNAL_DESK_BASE_URL) && (settings.apiKey || envKey)),
-    baseUrl: settings.baseUrl || env.SIGNAL_DESK_BASE_URL || "https://tiktokaitool.com",
+    configured: Boolean(baseUrl && (settings.apiKey || envKey)),
+    baseUrl,
     hasApiKey: Boolean(settings.apiKey || envKey),
     // Which key signalDesk() actually sends: the page-entered one wins, the
     // Worker secret SIGNAL_DESK_BRIDGE_KEY is the fallback (what production uses).

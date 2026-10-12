@@ -99,7 +99,7 @@ async function loadSettings() {
   if (!elements.bridgeUrl) return;
   try {
     const result = await requestJson("/api/private-tiktok/settings");
-    const settings = result.settings || {};
+    const settings = result.settings || result;
     elements.bridgeUrl.value = settings.baseUrl || "https://tiktokaitool.com";
     if (elements.settingsSummary) elements.settingsSummary.textContent = settings.configured ? `已连接 · ${settings.baseUrl}` : "尚未配置桥接 API Key。";
     updateAuthorizeLink();
@@ -117,7 +117,8 @@ async function saveSettings() {
       body: JSON.stringify({ baseUrl: elements.bridgeUrl.value.trim(), apiKey: elements.bridgeApiKey.value.trim() }),
     });
     elements.bridgeApiKey.value = "";
-    elements.settingsSummary.textContent = result.settings?.configured ? `已连接 · ${result.settings.baseUrl}` : "配置已保存，但尚未填写 API Key。";
+    const settings = result.settings || result;
+    elements.settingsSummary.textContent = settings.configured ? `已连接 · ${settings.baseUrl}` : "配置已保存，但尚未填写 API Key。";
     updateAuthorizeLink();
     await loadAccounts();
   } catch (error) {
@@ -143,11 +144,8 @@ async function loadAccounts({ refresh = false } = {}) {
   setBusy(elements.refreshButton, true, refresh ? "正在从主站同步..." : "刷新中...");
   if (elements.accountList) elements.accountList.innerHTML = '<div class="empty-state">正在读取已授权账号...</div>';
   try {
-    const [result, hub] = await Promise.all([
-      requestJson(`/api/private-tiktok/accounts${refresh ? "?refresh=1" : ""}`),
-      requestJson("/api/official-tiktok/publish-accounts").catch(() => ({ accounts: [] }))
-    ]);
-    state.accounts = attachPublishRiskMarks(Array.isArray(result.accounts) ? result.accounts : [], hub.accounts || []);
+    const result = await requestJson(`/api/private-tiktok/accounts${refresh ? "?refresh=1" : ""}`);
+    state.accounts = Array.isArray(result.accounts) ? result.accounts : [];
     state.groups = Array.isArray(result.groups) ? result.groups : [];
     state.projects = Array.isArray(result.projects) ? result.projects : [];
     fillProjectSelects();
@@ -159,8 +157,8 @@ async function loadAccounts({ refresh = false } = {}) {
     syncGroupReportBar();
     const incomplete = result.directoryComplete === false || result.source === "archive-fallback" || result.source === "archive+partial-live";
     showStatus(incomplete
-      ? `实时授权目录读取失败：当前仅显示 ${state.accounts.length} 个归档或部分账号，不代表中台授权总数。请稍后刷新。`
-      : `已读取 ${state.accounts.length} 个已授权账号，${state.projects.length} 个项目，${state.groups.length} 个分组。`, incomplete);
+      ? (result.directoryWarning || '未能读取完整授权目录，请点击“刷新账号”重试。')
+      : `${refresh ? '已从中台更新' : '已读取保存的'} ${state.accounts.length} 个账号，${state.projects.length} 个项目，${state.groups.length} 个分组。${result.directoryUpdatedAt ? '上次更新：' + formatTime(result.directoryUpdatedAt) + '。' : ''}`, incomplete);
   } catch (error) {
     state.accounts = [];
     if (elements.accountList) elements.accountList.innerHTML = '<div class="empty-state">暂时无法读取账号。</div>';

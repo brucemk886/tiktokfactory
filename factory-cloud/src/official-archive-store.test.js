@@ -97,20 +97,20 @@ test("account directory keeps live authorized accounts after a normal page reloa
 async function directoryFixture(t) {
   const {DatabaseSync}=await import('node:sqlite');
   const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());
-  sqlite.exec('CREATE TABLE factory_kv(key TEXT PRIMARY KEY,value_json TEXT); CREATE TABLE official_account_assignments(account_key TEXT,group_id TEXT); CREATE TABLE official_accounts_latest(account_key TEXT,label TEXT,synced_at INTEGER,video_count INTEGER,views INTEGER,profile_json TEXT NOT NULL DEFAULT \'{}\');');
+  sqlite.exec('CREATE TABLE factory_kv(key TEXT PRIMARY KEY,value_json TEXT,updated_at INTEGER); CREATE TABLE official_account_assignments(account_key TEXT,group_id TEXT); CREATE TABLE official_accounts_latest(account_key TEXT,label TEXT,synced_at INTEGER,video_count INTEGER,views INTEGER,profile_json TEXT NOT NULL DEFAULT \'{}\');');
   const store={projects:[{id:'proj',name:'Psychology',moduleKey:'psychology'}],groups:[{id:'group',name:'Test',projectId:'proj'}]};
-  sqlite.prepare('INSERT INTO factory_kv VALUES(?,?)').run('official-account-groups',JSON.stringify(store));
+  sqlite.prepare('INSERT INTO factory_kv(key,value_json) VALUES(?,?)').run('official-account-groups',JSON.stringify(store));
   for(let i=0;i<65;i++){sqlite.prepare('INSERT INTO official_accounts_latest(account_key,label,synced_at,video_count,views,profile_json) VALUES(?,?,0,0,0,?)').run('tiktok:acc-'+i,'@account'+i,i===0?JSON.stringify({followers:25082}):'{}');sqlite.prepare('INSERT INTO official_account_assignments VALUES(?,?)').run('acc-'+i,'group');}
-  const db={prepare(sql){let args=[];return{bind(...values){args=values;return this;},async first(){return sqlite.prepare(sql).get(...args);},async all(){return{results:sqlite.prepare(sql).all(...args)};}};}};
+  const db={prepare(sql){let args=[];return{bind(...values){args=values;return this;},async first(){return sqlite.prepare(sql).get(...args);},async all(){return{results:sqlite.prepare(sql).all(...args)};},async run(){return {meta:sqlite.prepare(sql).run(...args)};}};}};
   const env={DB:db,SIGNAL_DESK_BASE_URL:'https://hub.test',SIGNAL_DESK_BRIDGE_KEY:'synthetic-key'};
   const live=Array.from({length:115},(_,i)=>({schema:'tiktok:acc-'+i,profile:{username:'account'+i}}));
-  return {db,env,live};
+  return {db,env,live,sqlite};
 }
 
 test('directory reads every page to return 115 accounts over the 65 archived accounts',async t=>{
   const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);let requests=0;
-  t.mock.method(globalThis,'fetch',async url=>{const u=new URL(url);requests++;assert.equal(u.searchParams.get('limit'),'100');return Response.json(u.searchParams.get('cursor')?{accounts:f.live.slice(100),hasMore:false}:{accounts:f.live.slice(0,100),hasMore:true,nextCursor:'page-2'});});
-  const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,115);assert.equal(result.directoryComplete,true);assert.equal(result.directoryWarning,'');assert.equal(requests,2);
+  t.mock.method(globalThis,'fetch',async url=>{const u=new URL(url);if(u.pathname==='/api/v1/accounts')return Response.json({accounts:[]});requests++;assert.equal(u.searchParams.get('limit'),'100');return Response.json(u.searchParams.get('cursor')?{accounts:f.live.slice(100),hasMore:false}:{accounts:f.live.slice(0,100),hasMore:true,nextCursor:'page-2'});});
+  const result=await listAllAccounts(f.env,f.db,true);assert.equal(result.accounts.length,115);assert.equal(result.directoryComplete,true);assert.equal(result.directoryWarning,'');assert.equal(requests,2);
   assert.equal(result.accounts.find(account=>account.schema==='tiktok:acc-0').followers,25082);
 });
 
@@ -118,14 +118,14 @@ test('bridge failure clearly labels the 65-row archive fallback and logs no upst
   const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t),logs=[];
   t.mock.method(console,'warn',(...args)=>logs.push(args.join(' ')));
   t.mock.method(globalThis,'fetch',async()=>Response.json({error:'private upstream diagnostic'},{status:500}));
-  const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,65);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive-fallback');assert.match(result.directoryWarning,/不代表中台授权总数/);assert.doesNotMatch(JSON.stringify(result)+logs.join(''),/private upstream diagnostic/);assert.match(logs.join(''),/official-directory-fallback/);
+  const result=await listAllAccounts(f.env,f.db,true);assert.equal(result.accounts.length,65);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive-fallback');assert.match(result.directoryWarning,/不代表中台授权总数/);assert.doesNotMatch(JSON.stringify(result)+logs.join(''),/private upstream diagnostic/);assert.match(logs.join(''),/official-directory-fallback/);
 });
 
 test('later page failures and invalid cursors never report a complete live directory',async t=>{
   const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);t.mock.method(console,'warn',()=>{});
   let brokenCursor=false;
   t.mock.method(globalThis,'fetch',async url=>new URL(url).searchParams.get('cursor')?Response.json({error:'unavailable'},{status:503}):Response.json({accounts:f.live.slice(0,100),hasMore:true,nextCursor:brokenCursor?'':'next'}));
-  for(const invalid of [false,true]){brokenCursor=invalid;const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,100);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive+partial-live');}
+  for(const invalid of [false,true]){brokenCursor=invalid;const result=await listAllAccounts(f.env,f.db,true);assert.equal(result.accounts.length,100);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive+partial-live');}
 });
 
 test('report archive reads use a bounded pool, enforce scope and avoid read-path repair writes',async()=>{
@@ -358,4 +358,62 @@ test('overview classifies historical cached posts from exact scoped publication 
  assert.equal(original.videosByAccount.get('tiktok:a')[0].mediaType,undefined);
  assert.equal(JSON.stringify([...result.videosByAccount]).includes('private'),false);
  assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);assert.equal(f.reads.length,0);
+});
+
+
+test('page entry never reads the Hub; manual refresh replaces membership and subsequent page loads reuse it',async t=>{
+ const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);let reads=0;
+ t.mock.method(globalThis,'fetch',async url=>{reads++;if(new URL(url).pathname==='/api/v1/accounts')return Response.json({accounts:[{id:'acc-0',publishRisk:{flagged:true,label:'Risk',reason:'spam_risk',count:2,lastAt:100}}]});return Response.json({accounts:f.live.slice(0,2),hasMore:false});});
+ const first=await listAllAccounts(f.env,f.db);assert.equal(reads,0);assert.equal(first.directoryComplete,false);assert.match(first.directoryWarning,/刷新账号/);
+ const fresh=await listAllAccounts(f.env,f.db,true);assert.equal(fresh.accounts.length,2);assert.equal(fresh.source,'live-refresh');assert.ok(fresh.directoryUpdatedAt>0);assert.equal(reads,2);
+ const archived=f.sqlite.prepare('SELECT count(*) n FROM official_accounts_latest').get().n;assert.equal(archived,65);
+ const cached=await listAllAccounts(f.env,f.db);assert.equal(reads,2);assert.equal(cached.accounts.length,2);assert.equal(cached.directoryUpdatedAt,fresh.directoryUpdatedAt);assert.equal(cached.accounts[0].publishRisk.flagged,true);
+});
+
+test('empty complete live directory hides all archived accounts and saves an empty snapshot',async t=>{
+ const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);
+ t.mock.method(globalThis,'fetch',async()=>Response.json({accounts:[],hasMore:false}));
+ assert.equal((await listAllAccounts(f.env,f.db,true)).accounts.length,0);
+ assert.equal((await listAllAccounts(f.env,f.db)).accounts.length,0);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM official_accounts_latest').get().n,65);
+});
+
+test('failed or incomplete refresh preserves the last complete snapshot without adding partial accounts',async t=>{
+ const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);let broken=false;
+ t.mock.method(console,'warn',()=>{});
+ t.mock.method(globalThis,'fetch',async url=>{const u=new URL(url);if(u.pathname==='/api/v1/accounts')return Response.json({accounts:[]});return broken?Response.json({accounts:f.live.slice(10,20),hasMore:true,nextCursor:''}):Response.json({accounts:f.live.slice(0,2),hasMore:false});});
+ const good=await listAllAccounts(f.env,f.db,true);broken=true;
+ const failed=await listAllAccounts(f.env,f.db,true);assert.equal(failed.directoryComplete,false);assert.equal(failed.source,'directory-cache-fallback');assert.deepEqual(failed.accounts,good.accounts);
+ assert.equal((await listAllAccounts(f.env,f.db)).directoryUpdatedAt,good.directoryUpdatedAt);
+});
+
+test('authoritative directory merges metadata by stable identity, never by a reused username',async()=>{
+ const {mergeOfficialAccountDirectory}=await import('./official.js');
+ const rows=mergeOfficialAccountDirectory([{schema:'tiktok:old',profile:{username:'reused'},videoCount:99},{schema:'tiktok:keep',profile:{username:'old-name'},videoCount:4}],
+ [{schema:'tiktok:new',profile:{username:'reused'}},{connectionId:'keep',schema:'tiktok:keep',profile:{username:'new-name'}}]);
+ assert.equal(rows.length,2);assert.equal(rows[0].videoCount,undefined);assert.equal(rows[1].videoCount,4);assert.equal(rows[1].profile.username,'new-name');assert.equal(rows.some(r=>r.schema==='tiktok:old'),false);
+});
+
+test('persisted account directory whitelists public fields and omits credentials and full analytics',async()=>{
+ const {directorySnapshotAccounts}=await import('../../scripts/official-account-directory.js');
+ const rows=directorySnapshotAccounts([{schema:'tiktok:a',accessToken:'SECRET',apiKey:'SECRET',ownerEmail:'private',profile:{username:'alpha',accessToken:'SECRET',insights:{private:'SECRET'}},followers:0,publishRisk:{flagged:true,reason:'spam_risk',accessToken:'SECRET'}}]);
+ assert.equal(rows[0].followers,0);assert.equal(rows[0].publishRisk.flagged,true);assert.doesNotMatch(JSON.stringify(rows),/SECRET|private|accessToken|ownerEmail/);
+});
+
+
+test('default bridge URL and environment key report configured without page-entered settings',async t=>{
+ const {handleOfficial}=await import('./official.js'),f=await directoryFixture(t);f.env.SIGNAL_DESK_BASE_URL='';
+ t.mock.method(globalThis,'fetch',async()=>{throw Error('Settings read must not access the Hub');});
+ const url=new URL('https://factory.test/api/private-tiktok/settings');
+ const response=await handleOfficial(new Request(url),f.env,url,{user:{role:'admin'}});
+ const settings=await response.json();assert.equal(settings.configured,true);assert.equal(settings.apiKeySource,'env');assert.equal(settings.baseUrl,'https://tiktokaitool.com');assert.doesNotMatch(JSON.stringify(settings),/synthetic-key/);
+});
+
+test('a settings change invalidates the saved directory without triggering an automatic Hub read',async t=>{
+ const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);
+ t.mock.method(globalThis,'fetch',async()=>Response.json({accounts:f.live.slice(0,2),hasMore:false}));
+ await listAllAccounts(f.env,f.db,true);
+ f.sqlite.prepare('INSERT INTO factory_kv(key,value_json) VALUES(?,?)').run('official-settings',JSON.stringify({baseUrl:'https://different.test',updatedAt:1234}));
+ t.mock.method(globalThis,'fetch',async()=>{throw Error('Automatic Hub read');});
+ const result=await listAllAccounts(f.env,f.db);assert.equal(result.directoryComplete,false);assert.match(result.directoryWarning,/刷新账号/);
 });

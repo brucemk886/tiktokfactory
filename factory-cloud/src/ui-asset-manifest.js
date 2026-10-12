@@ -152,7 +152,7 @@ export const UI_ASSETS = {
   "/tasks.js": "75085af491dd8200fbe1",
   "/theme-ops.css": "aa9741373c0619bff97e",
   "/tiktok-connections.css": "02170a67ecc198dd42e3",
-  "/tiktok-connections.js": "68343ab92b415823769c",
+  "/tiktok-connections.js": "e90198cde2d67b5fef55",
   "/vendor/bootstrap-icons/book.svg": "ae330ec1609b0a49ba94",
   "/vendor/bootstrap-icons/box-arrow-right.svg": "a1ec3378190a41402956",
   "/vendor/bootstrap-icons/chevron-down.svg": "6c98af73d9cd64d0f4ae",

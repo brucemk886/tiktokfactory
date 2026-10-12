@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { directorySnapshotAccounts, attachDirectoryRisk } from "./official-account-directory.js";
 import { summarizeOperationSignals } from "./private-tiktok-signals.js";
 
 const DEFAULT_BASE_URL = "https://tiktokaitool.com";
@@ -70,6 +71,39 @@ export function createOfficialTikTokAnalyticsService({
       cursor = page.nextCursor;
     }
     return { connected: true, accounts, hasMore: accounts.length >= maximum, nextCursor: cursor };
+  }
+
+  async function listAccountDirectory({ refresh = false } = {}) {
+    const file = path.join(workDir, 'official-tiktok-account-directory.json');
+    const settings = getPublicSettings();
+    let saved = null;
+    try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+    const snapshot = saved?.version === 1 && Array.isArray(saved.accounts)
+      && saved.baseUrl === settings.baseUrl && saved.settingsUpdatedAt === settings.updatedAt ? saved : null;
+    if (!refresh) return { connected: Boolean(snapshot), accounts: snapshot?.accounts || [], directoryComplete: Boolean(snapshot), directoryCached: true, directoryUpdatedAt: snapshot?.updatedAt || 0,
+      directoryWarning: snapshot ? '' : '尚未保存当前授权目录，请点击“刷新账号”从中台读取。' };
+    try {
+      const all = [];
+      let cursor = '';
+      for (let page = 0; page < 100; page++) {
+        const result = await listAccountPage({ cursor, limit: 100 });
+        if (!Array.isArray(result.accounts)) throw statusError(502, '账号目录响应无效。');
+        all.push(...result.accounts);
+        if (!result.hasMore) break;
+        if (!result.nextCursor || result.nextCursor <= cursor || page === 99) throw statusError(502, '账号目录分页未完成。');
+        cursor = result.nextCursor;
+      }
+      const current = { connected: true, accounts: all, hasMore: false, nextCursor: '' };
+      const publish = await listPublishAccounts().catch(() => ({ accounts: [] }));
+      const accounts = directorySnapshotAccounts(attachDirectoryRisk(current.accounts, publish.accounts));
+      const updatedAt = now();
+      writeJson(file, { version: 1, accounts, updatedAt, baseUrl: settings.baseUrl, settingsUpdatedAt: settings.updatedAt });
+      return { ...current, accounts, directoryComplete: true, directoryCached: false, directoryUpdatedAt: updatedAt };
+    } catch (error) {
+      if (!snapshot) throw error;
+      return { connected: true, accounts: snapshot.accounts, directoryComplete: false, directoryCached: true, directoryUpdatedAt: snapshot.updatedAt,
+        directoryWarning: '中台授权目录刷新失败，已保留上次保存的账号，请点击“刷新账号”重试。' };
+    }
   }
 
   async function listArchivePage({ cursor = "", limit = 20, videosPerAccount = 100 } = {}) {
@@ -377,7 +411,7 @@ export function createOfficialTikTokAnalyticsService({
     };
   }
 
-  return { getPublicSettings, saveSettings, testConnection, listAccountPage, listAccounts, listArchivePage, listPublishAccounts, uploadPublishAsset, createPublishBatch, getPublishBatch, getPublishStats, cancelPublishBatch, listVideos, getVideo, getOperationSignals };
+  return { getPublicSettings, saveSettings, testConnection, listAccountPage, listAccounts, listAccountDirectory, listArchivePage, listPublishAccounts, uploadPublishAsset, createPublishBatch, getPublishBatch, getPublishStats, cancelPublishBatch, listVideos, getVideo, getOperationSignals };
 }
 
 function normalizeBaseUrl(value) {

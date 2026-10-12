@@ -168,3 +168,17 @@ test("account rows show synced follower counts and leave unknown values unmarked
   assert.match(accountList.innerHTML, /<b>0<\/b>/);
   assert.match(accountList.innerHTML, /<b>—<\/b>/);
 });
+
+
+test('page entry requests only the saved directory; refresh button explicitly reads Hub and settings support both envelopes',async()=>{
+ const status={hidden:true,textContent:'',classList:{toggle(){}}},listeners={},requests=[];
+ const node={value:'',textContent:'',addEventListener(){}};
+ const nodes={'#statusMessage':status,'#bridgeUrl':{...node},'#bridgeApiKey':{...node},'#settingsSummary':{...node},'#authorizeLink':{href:''},'#refreshButton':{addEventListener(type,fn){listeners[type]=fn;}}};
+ let nested=false;
+ const context=vm.createContext({URL,URLSearchParams,document:{body:{dataset:{}},querySelector:id=>nodes[id]||null},fetch:async(url)=>{requests.push(url);return {ok:true,async json(){if(url.includes('/settings'))return nested?{settings:{configured:true,baseUrl:'https://hub.test'}}:{configured:true,baseUrl:'https://hub.test'};return {accounts:[],groups:[],projects:[],directoryComplete:true,directoryUpdatedAt:1000};}};}});
+ const script=read('tiktok-connections.js').replace('await loadSettings();','').replace('await loadAccounts();','');
+ vm.runInContext(script+'\nglobalThis.ui={loadSettings,loadAccounts};',context);
+ await context.ui.loadSettings();assert.match(nodes['#settingsSummary'].textContent,/已连接/);nested=true;await context.ui.loadSettings();assert.match(nodes['#settingsSummary'].textContent,/已连接/);
+ requests.length=0;await context.ui.loadAccounts();assert.deepEqual(requests,['/api/private-tiktok/accounts']);assert.match(status.textContent,/保存的/);
+ await listeners.click();assert.equal(requests.at(-1),'/api/private-tiktok/accounts?refresh=1');assert.equal(requests.some(url=>url.includes('/publish-accounts')),false);assert.match(status.textContent,/已从中台更新/);
+});

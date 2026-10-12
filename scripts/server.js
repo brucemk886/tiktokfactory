@@ -759,7 +759,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/private-tiktok/accounts") {
-      return sendJson(res, 200, officialTikTokAccountGroups.attach(await privateTikTokAnalytics.listAccounts()), { "Cache-Control": "no-store" });
+      return sendJson(res, 200, officialTikTokAccountGroups.attach(await privateTikTokAnalytics.listAccountDirectory({ refresh: url.searchParams.get("refresh") === "1" })), { "Cache-Control": "no-store" });
     }
 
     if (req.method === "GET" && url.pathname === "/api/official-tiktok/account-groups") {
