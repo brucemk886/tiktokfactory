@@ -23,7 +23,13 @@ Finish the user-requested material ID display and multi-select deletion, retaini
 - No live publication or live deletion is used for validation.
 
 ## Unfinished work
-Production release and final regression completion follow this commit.
+None. Final regression and production read-only verification completed.
 
 ## Recommended next step
 After release, refresh Video Hits, select poor materials and inspect the confirmation list. A blocked batch should be refreshed before reselection; existing queued/published materials stay protected.
+
+## Release verification
+- Runtime commit e1b0078 was pushed to GitHub main before the clean main release checkout ran factory-cloud/npm run deploy. Exact HEAD == origin/main passed; no migrations pending. Worker version b628e239-635f-4a28-8863-e1154d28c871.
+- Authenticated production ready inventory returned 200, twelve current-page rows and 492 eligible versions at verification time. Every returned material ID matched its exact source/version; creation timestamps remained present. Exact ID search returned one version. Both selection controls and the zero-selected state rendered.
+- All four changed JS/CSS modules returned 200 and normalized SHA-256 matched committed sources. A deliberately empty selection returned 400 before any mutation. No real deletion, generation or publication was performed during verification.
+- Desktop layout and interactions were accepted in local 1600px Chromium fixtures. The live Agent Window remained constrained by host screen geometry; production acceptance used rendered DOM and authenticated read responses. Owned browser session stopped, evidence retained only in ignored local files.
