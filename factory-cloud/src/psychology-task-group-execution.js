@@ -39,7 +39,7 @@ export async function taskSlotAccounts(db,pilot,ids,slot,{includeClaimed=false}=
   const enrolled=(await db.prepare('SELECT connection_id,first_seen_at,legacy_member,enrolled,excluded FROM psychology_task_group_accounts WHERE policy_id=? AND connection_id IN (SELECT value FROM json_each(?))').bind(policy.id,JSON.stringify(ids)).all()).results;
   const registry=new Map(enrolled.map(a=>[a.connection_id,a]));
   const selected=pilot.task_group_policy_id===policy.id;
-  if(!selected)return ids.filter(id=>!registry.get(id)?.enrolled);
+  if(!selected)return !policy.enabled||slot>=policy.ends_at ? ids : ids.filter(id=>!registry.get(id)?.enrolled);
   if(!policy.enabled||slot>=policy.ends_at)return pilot.task_group_managed?[]:ids.filter(id=>registry.get(id)?.enrolled&&!registry.get(id)?.excluded);
   // A prestart timezone conversion may move the cycle later. Do not backfill
   // the old schedule into that gap; already-frozen items still run unchanged.

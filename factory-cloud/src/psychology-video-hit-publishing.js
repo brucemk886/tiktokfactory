@@ -1,3 +1,4 @@
+import {readyScheduleStatements} from './psychology-ready-schedule-commit.js';
 import {hitAdmin} from './psychology-video-hit-access.js';
 import {videoHitUser,sourceRow,versionRow,guard} from './psychology-video-hits.js';
 import {assetPin} from './psychology-video-hit-cleanup.js';
@@ -54,9 +55,9 @@ export function hitPublishStatements(db,hit,id,stamp){
  if(digest)statements.push(...assetPin(db,user,asset.id,'video',stamp),db.prepare('INSERT INTO psychology_video_hit_video_usage(owner_id,digest,asset_id,item_id) VALUES(?,?,?,?)').bind(digestOwnerId,digest,asset.id,id));
  return statements;
 }
-export async function commitVideoBatch(env,user,config,batchId,entries,accounts){
+export async function commitVideoBatch(env,user,config,batchId,entries,accounts,internal={}){
  await ensurePsychologyOneMembers(env,user,config,accounts);
- const db=env.DB,stamp=Date.now(),statements=[...(entries.some(entry=>entry.photoReceiver)?[photoReceiverGuard(db,user,{revision:entries.find(entry=>entry.photoReceiver).photoReceiver.settingsRevision})]:[]),db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp)];
+ const db=env.DB,stamp=Date.now(),statements=[...readyScheduleStatements(db,internal,batchId,entries.map(e=>e.connectionId),stamp),...(entries.some(entry=>entry.photoReceiver)?[photoReceiverGuard(db,user,{revision:entries.find(entry=>entry.photoReceiver).photoReceiver.settingsRevision})]:[]),db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp)];
  for(let i=0;i<entries.length;i+=20)statements.push(db.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES(?,?,?,?)').bind(batchId+'-group-'+Math.floor(i/20),batchId,Math.floor(i/20),Math.min(20,entries.length-i)));
  entries.forEach((entry,index)=>{
   const id=batchId+'-'+String(index).padStart(3,'0'),groupId=batchId+'-group-'+Math.floor(index/20),hit=entry.hit,asset=hit?hit.asset:entry.asset,account=accounts.find(a=>String(a.connectionId||a.id)===entry.connectionId)||{};
@@ -72,7 +73,7 @@ export async function commitVideoBatch(env,user,config,batchId,entries,accounts)
  try{await db.batch(statements);}catch(error){const existing=await db.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();if(existing?.config_json===JSON.stringify(config))return json({accepted:true,duplicate:true,batchId});if(/CHECK constraint|UNIQUE constraint/i.test(error.message))fail('所选二创已被其他任务占用，请刷新视频列表重新选择。');throw error;}
  return json({accepted:true,batchId,count:entries.length},202);
 }
-export async function drawHitVideoBatch(env,user,config,batchId,accounts){
+export async function drawHitVideoBatch(env,user,config,batchId,accounts,internal={}){
  if(!env.ARCHIVE)fail('成片存储尚未配置。',503);
  const inventory=config.videoVersions?{videos:config.videoVersions.map(videoHit=>({videoHit}))}:await hitVideoInventory(env,user,{limit:1000,selection:config.selection,query:config.query}),entries=[],digests=new Set();
  for(const v of inventory.videos){
@@ -88,5 +89,5 @@ export async function drawHitVideoBatch(env,user,config,batchId,accounts){
  }
  if(entries.length<config.count)fail('符合条件且未发布的二创成片只有 '+entries.length+' 条，请减少数量或补充成片。',400);
  if(entries.some(e=>e.caption.length>2200))fail('二创发布文案超过2200字，请先在二创详情修改。',400);
- return commitVideoBatch(env,user,config,batchId,entries,accounts);
+ return commitVideoBatch(env,user,config,batchId,entries,accounts,internal);
 }

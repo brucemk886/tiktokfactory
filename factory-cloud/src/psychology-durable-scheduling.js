@@ -1,5 +1,5 @@
 import { autopilotCheckWindow } from './psychology-autopilot-execution.js';
-import { AUTOPILOT, dueSlots, autopilotDirectory, pilotLibraryConfig, pilotPairSeed, pilotSlotsAt, recoveryBatchIds, guardAccounts, pilotOutcomes } from './psychology-autopilot.js';
+import { AUTOPILOT, dueSlots, autopilotDirectory, pilotLibraryConfig, pilotPairSeed, pilotSlotsAt, recoveryBatchIds, guardAccounts, pilotOutcomes, prepareAutopilotBatch, pilotRoster, pilotReadyPreparationAt } from './psychology-autopilot.js';
 import { loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { reconcileTaskExecutors, taskSlotAccounts, taskPublishContext, sameDeliveryDay } from './psychology-task-group-execution.js';
 import { stopPending } from './psychology-autopilot-execution.js';
@@ -110,7 +110,7 @@ async function existingItems(db,pilot,slotAt){
  return {ids:[...ids],items:ids.size?await rows(db,'SELECT id,batch_id,connection_id,deleted_at FROM psychology_publish_items WHERE batch_id IN (SELECT value FROM json_each(?))',JSON.stringify([...ids])):[]};
 }
 async function initializeSlot(env,w,now,current){
- const {pilot,user,directory}=current,db=env.DB,accounts=directory.accounts.filter(a=>a.groupId===pilot.group_id);
+ const {pilot,user,directory}=current,db=env.DB,accounts=pilotRoster(pilot,directory.accounts.filter(a=>a.groupId===pilot.group_id));
  const ids=accounts.map(connection),states=new Map((await rows(db,"SELECT connection_id,status FROM psychology_autopilot_accounts WHERE autopilot_id=?",pilot.id)).map(a=>[a.connection_id,a.status]));
  const pauses=guardAccounts({connectionIds:ids.filter(id=>states.get(id)!=='paused'),outcomesByConnection:await pilotOutcomes(db,pilot.id,now)});
  for(const a of pauses){
@@ -150,6 +150,8 @@ async function slotStep(env,w,now){
  const db=env.DB,current=await currentSlot(env,w,now);
  if(current.reason){await memberResult(db,w,(await rows(db,"SELECT connection_id FROM psychology_schedule_members WHERE work_id=? AND status='pending'",w.id)).map(a=>a.connection_id),'skipped',current.reason,now);return saveProgress(db,w,{status:'done',detail:current.reason},now);}
  const {pilot,user,directory}=current;
+ const prepareAt=pilotReadyPreparationAt(pilot,w.slot_at);
+ if(prepareAt>now){await saveProgress(db,w,{delay:prepareAt-now},now);return;}
  const preparation=await db.prepare("SELECT status,phase FROM psychology_schedule_work WHERE id=?").bind('owner:'+w.owner+':'+w.window_at).first();
  if(preparation&&preparation.phase===0){if(preparation.status==='failed')throw new Error('项目账号准备失败，等待恢复');await saveProgress(db,w,{delay:MINUTE},now);return;}
  if(w.phase===0)return initializeSlot(env,w,now,current);
@@ -178,7 +180,7 @@ async function slotStep(env,w,now){
  const [load,accountCounts]=await Promise.all([readProductionLoad(db,now),readProductionAccountCounts(db,now)]);
  const productionPlan=estimateProductionLead({...load,accountCounts},{owner:w.owner,accountCount:accountCounts[w.owner]||connections.length,slotAt:w.slot_at,now});
  const musicIds=(await kvGet(db,'psychology-auto-music-pool',[])).filter(id=>/^\d{1,30}$/.test(String(id))).slice(0,100);
- const body={requestId:await uuid(w.id+':'+connections.join(',')),name:'项目自动运营 · '+zonedDate(w.slot_at,pilotTimeZoneAt(pilot,w.slot_at)),mediaType:'photo',template:'photo-text',sourceType:'library',...pilotLibraryConfig(pilot,w.slot_at),pairSeed:pilotPairSeed(pilot,w.slot_at),count:connections.length,connectionIds:connections,scheduleAt,intervalMinutes:60,staggerSeconds:45,styleMode:'random',styleId:'classic',musicIds};
+ const body=await prepareAutopilotBatch(env,user,{pilot,slot:w.slot_at,connectionIds:connections,requestId:await uuid(w.id+':'+connections.join(',')),name:'项目自动运营 · '+zonedDate(w.slot_at,pilotTimeZoneAt(pilot,w.slot_at)),scheduleAt,musicIds});
  const request=new Request('https://autopilot.internal/api/psychology-auto-publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
  const response=await handlePsychologyAutoPublish(request,env,new URL(request.url),{user},{...context,productionPlan,productionLeadMs:productionPlan.leadMs,scheduleWork:{id:w.id,token:w.lease_token}});
  const result=await response.json();

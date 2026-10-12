@@ -451,7 +451,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   await assertPublishFollowers(env.DB,config,scoped.accounts);
   const receiverPool=config.mentionReceiver?await photoReceiverPool(env,user,scoped.accounts):null;
   if(receiverPool)requirePhotoReceivers(receiverPool,config.connectionIds);
-  if(config.sourceType==='video-hits')return config.mediaType==='photo'?createHitPhotoBatch(env,user,config,batchId,scoped.accounts,{receiverPool}):drawHitVideoBatch(env,user,config,batchId,scoped.accounts);
+  if(config.sourceType==='video-hits')return config.mediaType==='photo'?createHitPhotoBatch(env,user,config,batchId,scoped.accounts,{...internal,receiverPool}):drawHitVideoBatch(env,user,config,batchId,scoped.accounts,internal);
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
   let sources, testState, matchingSkipped=[], conversionAssignments=new Map();

@@ -381,3 +381,7 @@ The single public video-hit guide is generated from `docs/psychology-video-hits-
 - Published photo facts join that immutable identity and deduplicate account/video receipts using ops_video_owners. Daily views are latest cumulative views grouped by Beijing publication date; no daily view delta is inferred. Historical receiver roles remain observable after settings change, within current grants.
 - psychology-website-funnel shares its click-cohort SQL with a daily range reader (one site range query, no per-day queries). Receiver visits use unmodified UTC samples while short-link clicks/arrivals use Beijing click dates. Missing samples and tracking coverage remain explicit; only linked website stages get conversion rates. Independent-site read failures preserve known photo/profile metrics.
 - Only Operations gains channel=receiving. The existing standard and One tabs remain isolated, and inactive channels do not issue report requests.
+
+## Ready-material campaign scheduling
+
+Autopilot stores optional fixed account IDs and explicit dated publication rounds alongside legacy daily schedules. The durable scheduler and direct runner share the same ready-material batch builder. Video Hits batch transactions include the existing scheduler lease fence, member outcomes and partial slot ownership. Future ready-material work waits until two hours before publication; first-night preparation can be explicitly immediate. Publishing executors and the saved receiver configuration retain ownership of delivery and CTA snapshots.

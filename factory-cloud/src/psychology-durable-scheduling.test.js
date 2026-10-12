@@ -186,3 +186,65 @@ test('partial chunks are owned immediately so stop-pending can cancel them befor
  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='a'").get().n,1);
  assert.ok(f.sqlite.prepare("SELECT deleted_at FROM psychology_publish_items WHERE connection_id='a'").get().deleted_at);
 });
+
+import {stopPending} from './psychology-autopilot-execution.js';
+import {handlePsychologyAutopilot,dueSlots,pilotReadyPreparationAt,pilotContentModeAt} from './psychology-autopilot.js';
+async function readyCampaignFixture(t,media='video') {
+ const f=await taskFixture(t),now=at('2026-10-12','23:20'),slot=at('2026-10-13','00:30');f.setNow(now);
+ f.sqlite.exec("UPDATE psychology_task_group_policies SET enabled=0; UPDATE psychology_autopilots SET status='ended'");
+ f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-publish','psychology-autopilot','psychology-video-hits']));
+ f.env.ARCHIVE={async head(){return {size:8};},async get(){return null;},async delete(){}};
+ f.env.PHOTO_BROWSER={};f.env.PHOTO_QUEUE={async send(){}};f.env.SCHEDULE_QUEUE={async send(){}};
+ for(const id of ['a','b','c'])f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,profile_json,synced_at) VALUES(?,?,?)').run('tiktok:'+id,JSON.stringify({username:id,followers:1500}),now);
+ f.sqlite.prepare('INSERT INTO psychology_imported_photo_settings(owner,revision,config_json) VALUES(?,?,?)').run('admin',1,JSON.stringify({receivers:[{connectionId:'c',username:'c',linkReady:true}],cta:{mention:'Visit {account} and take the test.',self:'Visit my bio.'}}));
+ for(let n=0;n<2;n++){
+  const source='vh-'+String(n+1).padStart(32,'0'),asset='asset-'+n;
+  f.sqlite.prepare('INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(source,'admin',source,'https://example.test/video','Source',now,now);
+  f.sqlite.prepare('INSERT INTO psychology_video_hit_versions(source_id,version,name,title,caption,enabled,input_mode,video_asset_id,created_at,updated_at) VALUES(?,1,?,?,?,1,?,?,?,?)').run(source,'Version','Ready title','Saved ready caption',media==='video'?'video':'frames',media==='video'?asset:'',now,now);
+  if(media==='video'){
+   f.sqlite.prepare('INSERT INTO psychology_video_assets(id,owner,r2_key,file_name,file_size,content_type,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?, ?,?)').run(asset,'admin','key-'+n,'clip.mp4',8,'video/mp4','ready',now,now);
+   f.sqlite.prepare('INSERT INTO psychology_video_hit_videos(id,owner_id,digest,file_name,content_type,size,r2_key,created_at) VALUES(?,?,?,?,?,?,?,?)').run(asset,'admin','digest-'+n,'clip.mp4','video/mp4',8,'key-'+n,now);
+  }else f.sqlite.prepare('INSERT INTO psychology_video_hit_frames(source_id,version,frame_index,image_url,text,duration_seconds) VALUES(?,1,1,?,?,5)').run(source,'https://images.example.test/1.jpg','Saved image text');
+ }
+ const pilot=f.pilot({current_strategy:'evolve',task_group_policy_id:'',content_source:'video-hits',mention_receivers:1,start_now:1,created_at:now,updated_at:now,ends_at:slot+30*60000,slots_json:JSON.stringify([{hour:0,minute:30}]),campaign_slots_json:JSON.stringify([slot]),content_schedule_json:JSON.stringify([media==='video'?'video-hits-video':'video-hits-photo']),account_ids_json:JSON.stringify(['a'])});
+ await ensureScheduleWindow(f.env,now,{owner:'admin',pilotId:pilot.id});
+ f.sqlite.exec("UPDATE psychology_schedule_work SET status='done',phase=1 WHERE kind='owner'");
+ const w=f.sqlite.prepare('SELECT * FROM psychology_schedule_work WHERE pilot_id=?').get(pilot.id);
+ return {...f,w,now,pilot,slot};
+}
+for(const media of ['video','photo'])test('durable ready '+media+' uses saved material, freezes CTA, owns partial batches and cancels safely',async t=>{
+ const f=await readyCampaignFixture(t,media),done=await drain(f);
+ assert.equal(done.status,'done',done.detail);
+ const items=f.sqlite.prepare('SELECT * FROM psychology_publish_items').all();assert.equal(items.length,1);assert.equal(items[0].connection_id,'a','fixed roster excludes b');
+ const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(items[0].job_id),payload=JSON.parse(job.payload_json);
+ assert.equal(payload.psychologyAutomation.photoReceiver.username,'c');
+ assert.equal(media==='video'?payload.publish.videoDesc:payload.plan.caption,'Saved ready caption\n\nVisit @c and take the test.');
+ const batch=JSON.parse(f.sqlite.prepare('SELECT config_json FROM psychology_publish_batches').get().config_json);assert.equal(batch.sourceType,'video-hits');assert.equal(batch.mentionReceiver,true);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_schedule_commits').get().n,1);
+ const linked=f.sqlite.prepare('SELECT batch_id FROM psychology_autopilot_slots WHERE autopilot_id=?').get(f.pilot.id).batch_id;assert.equal(linked,items[0].batch_id);
+ await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n,1);
+ assert.equal(await stopPending(f.db,f.pilot.id),1);assert.ok(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items').get().deleted_at>0);assert.equal(f.requests.length,0);
+});
+test('ready reservations roll back when a plan pauses during the final atomic commit',async t=>{
+ const f=await readyCampaignFixture(t,'video');await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});
+ const batch=f.db.batch.bind(f.db);f.db.batch=async statements=>{f.sqlite.prepare("UPDATE psychology_autopilots SET status='paused' WHERE id=?").run(f.pilot.id);return batch(statements);};
+ await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n,0);assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_video_hit_versions WHERE publish_item_id<>''").get().n,0);assert.equal(f.requests.length,0);
+});
+test('a six-round campaign has no extra midnight round and later material preparation waits for exactly two hours',()=>{
+ const created=at('2026-10-12','23:20'),exact=[at('2026-10-13','00:30'),at('2026-10-13','01:30'),at('2026-10-13','23:30'),at('2026-10-14','00:30'),at('2026-10-14','23:30'),at('2026-10-15','00:30')];
+ const p={created_at:created,ends_at:exact.at(-1)+20*60000,campaign_slots_json:JSON.stringify(exact),slots_json:'[]',start_now:1,content_source:'video-hits',schedule_timezone:'Asia/Shanghai',content_schedule_json:JSON.stringify(['video-hits-video','video-hits-video','video-hits-video','video-hits-video','video-hits-video','video-hits-photo'])};
+ assert.deepEqual(dueSlots(p,created),exact.slice(0,4));
+ assert.equal(pilotReadyPreparationAt(p,exact[0]),created);assert.equal(pilotReadyPreparationAt(p,exact[2]),exact[2]-2*HOUR);assert.equal(pilotReadyPreparationAt(p,exact[4]),exact[4]-2*HOUR);assert.equal(pilotContentModeAt(p,exact[5]),'video-hits-photo');
+ assert.deepEqual(dueSlots(p,at('2026-10-15','02:00')),[]);
+});
+test('paused campaign creation saves the fixed roster and source, and retries return the same plan',async t=>{
+ const f=await readyCampaignFixture(t),freshActor={...actor,sidebarModules:['psychology-publish','psychology-autopilot','psychology-video-hits']};
+ f.sqlite.prepare("UPDATE psychology_autopilots SET status='ended' WHERE group_id='g'").run();
+ const url=new URL('https://factory.test/api/psychology-autopilot'),body={requestId:crypto.randomUUID(),groupId:'g',strategy:'evolve',days:3,startNow:true,deferStart:true,contentSource:'video-hits',mentionReceivers:true,connectionIds:['a'],campaignSlots:[f.slot],contentSchedule:['video-hits-video'],slots:[{hour:0,minute:30}]};
+ const create=b=>handlePsychologyAutopilot(new Request(url,{method:'POST',body:JSON.stringify(b)}),f.env,url,{user:freshActor});
+ const saved=await(await create(body)).json(),row=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(saved.id);assert.equal(row.status,'paused');assert.equal(row.content_source,'video-hits');assert.equal(row.mention_receivers,1);assert.deepEqual(JSON.parse(row.account_ids_json),['a']);
+ const again=await(await create(body)).json();assert.equal(again.id,saved.id);assert.equal(again.duplicate,true);
+ await assert.rejects(create({...body,mentionReceivers:false}),/requestId/);
+ await assert.rejects(create({...body,requestId:crypto.randomUUID(),connectionIds:['outside']}),/分组/);
+});

@@ -1,5 +1,7 @@
 # Current State
 
+- Ready-material autopilot campaigns use the saved Video Hits source and receiver CTA in both synchronous and durable execution. Campaigns can freeze account IDs and exact dated rounds, including a shifted first night; future material creation begins two hours before each round. Ready photo/video reservations atomically claim scheduler ownership and respect pause/cancel fences. Inactive project policies no longer suppress independently selected campaign accounts. See docs/handoffs/2026-10-12-ready-campaign-recreate.md.
+
 - Psychology autopilot plans can freeze an optional per-slot ready-material schedule, allowing a multi-day campaign to use ready Video Hits videos and photo albums in exact batch counts. Empty schedules preserve the existing plan-wide source. Receiver mentions remain frozen per item for both media types. See docs/handoffs/2026-10-12-autopilot-ready-mix.md.
 
 - Psychology manual video creation now uses the same unchecked @承接账号 option as photo creation, including ready Video Hits clips and generated video templates. Each item draws another saved eligible receiver, freezes it, and appends the CTA to the publishing caption only. TikTok One selection stays unchanged. See docs/handoffs/2026-10-12-video-publish-receivers.md.

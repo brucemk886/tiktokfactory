@@ -1,3 +1,4 @@
+import {handleVideoHitReady} from './psychology-video-hit-ready.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
 import { handleConversionCampaign } from './psychology-conversion.js';
 import { handleAutopilotDashboard } from './psychology-autopilot-dashboard.js';
@@ -92,7 +93,26 @@ function validateDayEnd(slots, accounts) {
   const last=slots.at(-1);
   if((last.hour*60+last.minute)*60 + Math.max(0,accounts-1)*AUTOPILOT.staggerSeconds >= 86400)fail('最后一个发布时间过晚，组内账号错峰后会跨天，请提前该时段。');
 }
+export function pilotCampaignSlots(pilot) { return JSON.parse(pilot.campaign_slots_json || '[]'); }
+export function pilotRoster(pilot, accounts) {
+  const ids = JSON.parse(pilot.account_ids_json || '[]');
+  return ids.length ? accounts.filter(a => ids.includes(connectionOf(a))) : accounts;
+}
+export function pilotReadyPreparationAt(pilot, slot) {
+  if (pilot.content_source !== 'video-hits') return 0;
+  const exact=pilotCampaignSlots(pilot);
+  if (pilot.start_now && (exact.length?slot<exact[0]+2*HOUR:zonedDate(slot,pilotTimeZoneAt(pilot,slot))===zonedDate(pilot.created_at,pilotTimeZoneAt(pilot,slot)))) return pilot.created_at;
+  return Math.max(pilot.created_at, slot - AUTOPILOT.leadMs);
+}
 export function pilotSlotsAt(pilot, now) {
+  const exact = pilotCampaignSlots(pilot);
+  if (exact.length) {
+    const date = zonedDate(now, pilotTimeZoneAt(pilot, now));
+    const sameDate = exact.filter(t => zonedDate(t, pilotTimeZoneAt(pilot,t)) === date);
+    const times = (sameDate.length ? sameDate : exact).map(t => zonedParts(t,pilotTimeZoneAt(pilot,t)));
+    const unique = new Map(times.map(t => [t.hour*60+t.minute,{hour:t.hour,minute:t.minute}]));
+    return normalizePilotSlots([...unique.values()]);
+  }
   return normalizePilotSlots(JSON.parse(pilot.slots_effective_at && now>=pilot.slots_effective_at ? pilot.pending_slots_json : pilot.slots_json));
 }
 
@@ -122,6 +142,8 @@ export function pilotContentModeAt(pilot, slot) {
   let sequence;
   try { sequence = JSON.parse(pilot.content_schedule_json || '[]'); } catch { return fallback; }
   if (!Array.isArray(sequence) || !sequence.length) return fallback;
+  const exact = pilotCampaignSlots(pilot);
+  if (exact.length) return sequence[exact.indexOf(slot)] || fallback;
   const slots = pilotSlotsAt(pilot, slot), timeZone = pilotTimeZoneAt(pilot, slot), time = zonedParts(slot, timeZone);
   const round = slots.findIndex(s => s.hour === time.hour && s.minute === time.minute);
   if (round < 0) return fallback;
@@ -137,8 +159,25 @@ export function autopilotBatchBody({ pilot, slot, connectionIds, requestId, name
   return { ...shared, mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(pilot, slot), pairSeed: pilotPairSeed(pilot, slot), styleMode: 'random', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
 }
 
+export async function prepareAutopilotBatch(env, user, options) {
+  const body = autopilotBatchBody(options);
+  if (body.sourceType === 'video-hits' && body.mediaType === 'photo') {
+    const refs = [];
+    for (let page=1; refs.length<body.count; page++) {
+      const url = new URL('https://autopilot.internal/api/psychology-video-hits/ready?mediaType=photo&page='+page);
+      const data = await (await handleVideoHitReady(new Request(url),env,url,{user})).json();
+      refs.push(...data.items.slice(0,body.count-refs.length).map(i=>i.ref));
+      if (!data.hasMore) break;
+    }
+    if (refs.length !== body.count) fail('待发布二创图文不足，请补充素材。',409);
+    body.photoVersions = refs;
+  }
+  return body;
+}
 // Slot times (ms) inside (now+lead, now+horizon], within the pilot's lifetime.
 export function dueSlots(pilot, now, slots = JSON.parse(pilot.slots_json)) {
+  const exact = pilotCampaignSlots(pilot);
+  if (exact.length) return exact.filter(t => t >= pilot.created_at && t < pilot.ends_at && t <= now + AUTOPILOT.horizonMs && t > now + (pilot.start_now && t < exact[0] + 2*HOUR ? AUTOPILOT.immediateLeadMs : AUTOPILOT.leadMs));
   const out = [];
   const boundary=Number(pilot.slots_effective_at)||Infinity;
   const currentZone=normalizeTimeZone(pilot.schedule_timezone);
@@ -310,7 +349,7 @@ export async function runAutopilot(env, pilot, now = Date.now(), productionConte
     return summary;
   }
   const directory=await autopilotDirectory(env,user,true);
-  const accounts=directory.accounts.filter(a=>a.groupId===pilot.group_id);
+  const accounts=pilotRoster(pilot,directory.accounts.filter(a=>a.groupId===pilot.group_id));
   const ids = accounts.map(connectionOf);
   if (ids.length) await db.prepare(`INSERT OR IGNORE INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at)
     SELECT ?,value,CASE WHEN ?<>'' AND (SELECT a.status FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? AND a.connection_id=value ORDER BY a.updated_at DESC,p.updated_at DESC,a.autopilot_id LIMIT 1)='paused' THEN 'paused' ELSE 'active' END,
@@ -353,6 +392,7 @@ export async function runAutopilot(env, pilot, now = Date.now(), productionConte
   const forecast=production.owners.get(user.username)||await readOwnerProductionForecast(db,user,directory,now);
   const musicIds = (await kvGet(db, 'psychology-auto-music-pool', [])).filter(id => /^\d{1,30}$/.test(String(id))).slice(0, 100);
   for (const slot of dueSlots(pilot, now)) {
+    if (pilotReadyPreparationAt(pilot,slot)>now) continue;
     const current = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
     if (current?.status !== 'active') break;
     if(!dueSlots(current,now).includes(slot))continue;
@@ -371,7 +411,7 @@ export async function runAutopilot(env, pilot, now = Date.now(), productionConte
     for (let offset = 0; offset < slotAccounts.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = slotAccounts.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch).filter((id,index)=>sameDeliveryDay(slot,Math.floor(slot/1000)+(offset+index)*AUTOPILOT.staggerSeconds,current.ends_at,pilotTimeZoneAt(current,slot)));
       if(!connectionIds.length)continue;
-      const body = autopilotBatchBody({ pilot: current, slot, connectionIds, requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${pilotLabel(current,slot)}`, scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, musicIds });
+      const body = await prepareAutopilotBatch(env,user,{ pilot: current, slot, connectionIds, requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${pilotLabel(current,slot)}`, scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, musicIds });
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
           env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext });
@@ -425,7 +465,7 @@ async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, n
     for (let offset = 0; offset < missing.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = missing.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch).filter((id,index)=>sameDeliveryDay(slot.slot_at,base+(offset+index)*AUTOPILOT.staggerSeconds,current.ends_at,pilotTimeZoneAt(current,slot.slot_at)));
       if(!connectionIds.length)continue;
-      const body = autopilotBatchBody({ pilot: current, slot: slot.slot_at, connectionIds, requestId: await uuidFrom(pilot.id + ':restore:' + slot.slot_at + ':' + connectionIds.join(',')), name: `自动运营 · ${current.group_name || current.group_id} · ${pilotLabel(current,slot.slot_at)} · 补排`, scheduleAt: base + offset * AUTOPILOT.staggerSeconds, musicIds });
+      const body = await prepareAutopilotBatch(env,user,{ pilot: current, slot: slot.slot_at, connectionIds, requestId: await uuidFrom(pilot.id + ':restore:' + slot.slot_at + ':' + connectionIds.join(',')), name: `自动运营 · ${current.group_name || current.group_id} · ${pilotLabel(current,slot.slot_at)} · 补排`, scheduleAt: base + offset * AUTOPILOT.staggerSeconds, musicIds });
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
           env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext });
@@ -653,7 +693,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
       const dayStart = Date.parse(beijingDate(Date.now()) + 'T00:00:00+08:00');
       const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
-      out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: pilotStrategyAt(p,Date.now()), strategyLabel: STRATEGIES[pilotStrategyAt(p,Date.now())], pendingStrategy:p.strategy_effective_at>Date.now()?p.pending_strategy||null:null, strategyEffectiveAt:p.strategy_effective_at>Date.now()?p.strategy_effective_at:0, status: p.status, endsAt: p.ends_at, createdAt: p.created_at, revision:p.updated_at,
+      out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: pilotStrategyAt(p,Date.now()), strategyLabel: STRATEGIES[pilotStrategyAt(p,Date.now())], pendingStrategy:p.strategy_effective_at>Date.now()?p.pending_strategy||null:null, strategyEffectiveAt:p.strategy_effective_at>Date.now()?p.strategy_effective_at:0, status: p.status, campaignSlots:pilotCampaignSlots(p), contentSource:p.content_source, mentionReceivers:Boolean(p.mention_receivers), endsAt: p.ends_at, createdAt: p.created_at, revision:p.updated_at,
         today, execution:executionCounts(items), performance:performanceRows.results.find(r=>r.pilot_id===p.id)||{n:0,medianViews:null,potentialRate:null}, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
         timeZone:pilotTimeZoneAt(p,Date.now()), pendingTimeZone:p.slots_effective_at>Date.now()?normalizeTimeZone(p.pending_schedule_timezone||p.schedule_timezone):null, slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, revision:a.updated_at, stopPending:Boolean(a.stop_pending) })),
         schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
@@ -666,26 +706,45 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots ?? (body.strategy === 'pools' ? AUTOPILOT.slots.slice(0,2) : AUTOPILOT.slots));
     const timeZone=normalizeTimeZone(body.timeZone);
+    const contentSource=body.contentSource||'library', mentionReceivers=body.mentionReceivers===true;
+    if(!['library','video-hits'].includes(contentSource))fail('素材来源无效。');
+    if(body.mentionReceivers!==undefined&&typeof body.mentionReceivers!=='boolean')fail('承接账号选项无效。');
+    if(body.deferStart!==undefined&&typeof body.deferStart!=='boolean')fail('启动选项无效。');
+    if(body.strategy==='pools'&&(mentionReceivers||contentSource==='video-hits'))fail('账号池策略不支持待发布素材或承接选项。');
+    if(contentSource==='video-hits'&&!hasPsychologyModule(user,'psychology-video-hits'))fail('没有视频爆款权限。',403);
+    const campaignSlots=body.campaignSlots||[], contentSchedule=body.contentSchedule||[];
+    if(!Array.isArray(campaignSlots)||campaignSlots.length>100||campaignSlots.some((t,i)=>!Number.isSafeInteger(t)||(i>0&&t<=campaignSlots[i-1]))||new Set(campaignSlots).size!==campaignSlots.length)fail('具体排期须为未来10分钟至14天内的唯一时间。');
+
+    if(campaignSlots.length&&contentSource!=='video-hits')fail('具体排期仅用于待发布素材计划。');
+    if(!Array.isArray(contentSchedule)||contentSchedule.some(m=>!['video-hits-video','video-hits-photo'].includes(m))||(contentSchedule.length&&contentSchedule.length!==campaignSlots.length))fail('每轮素材类型须与具体排期一致。');
+    const selectedIds=body.connectionIds||[];
+    if(!Array.isArray(selectedIds)||selectedIds.length>50||selectedIds.some(id=>typeof id!=='string'||!id)||new Set(selectedIds).size!==selectedIds.length)fail('账号清单无效。');
     if(body.startNow !== undefined && typeof body.startNow !== 'boolean')fail('立即准备选项无效。');
     if (!Object.hasOwn(STRATEGIES, body.strategy)) fail('请选择运营策略。');
     if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
     let apiId='',apiHash='';
-    if(apiOptions.external){
+    if(apiOptions.external||body.requestId!==undefined){
       if(!/^[a-f0-9-]{36}$/i.test(body.requestId||''))fail('新增须填写 UUID requestId，重试沿用同一个值。');
       apiId='pilot-'+await uuidFrom(user.username+':'+body.requestId);
-      apiHash=await sha256Hex(JSON.stringify([body.groupId,body.strategy,days,slots,body.startNow===true,...(timeZone===DEFAULT_TIME_ZONE?[]:[timeZone])]));
+      apiHash=await sha256Hex(JSON.stringify([body.groupId,body.strategy,days,slots,body.startNow===true,...(timeZone===DEFAULT_TIME_ZONE?[]:[timeZone]),...(body.contentSource||body.mentionReceivers||body.campaignSlots||body.connectionIds||body.deferStart?[contentSource,mentionReceivers,campaignSlots,contentSchedule,selectedIds,body.deferStart===true]:[])]));
       const prior=await db.prepare('SELECT id,group_id,api_request_hash,status,updated_at FROM psychology_autopilots WHERE id=? AND owner=?').bind(apiId,user.username).first();
       if(prior){if(!(await autopilotDirectory(env,user)).groups.some(g=>g.id===prior.group_id))fail('没有这个心理学分组的权限。',403);if(prior.api_request_hash!==apiHash)fail('requestId 已用于不同运营设置。',409);return json({id:prior.id,status:prior.status,revision:prior.updated_at,duplicate:true});}
     }
-    const group = (await autopilotDirectory(env, user, true)).groups.find(g => g.id === body.groupId);
+    if(campaignSlots.some(t=>t<Date.now()+AUTOPILOT.immediateLeadMs||t>Date.now()+14*DAY))fail('具体排期须为未来10分钟至14天内的唯一时间。');
+    const createDirectory=await autopilotDirectory(env,user,true);
+    const group = createDirectory.groups.find(g => g.id === body.groupId);
+    const scopedIds=new Set(createDirectory.accounts.filter(a=>a.groupId===body.groupId).map(connectionOf));
+    if(selectedIds.some(id=>!scopedIds.has(id)))fail('账号不在当前可发布分组内。',403);
     if (!group) fail('没有这个心理学分组的权限。', 403);
     if (!group.accounts) fail('这个分组里还没有已授权且有发布权限的账号，请检查分组成员和账号授权。');
     validateDayEnd(slots, group.accounts);
     if (await db.prepare("SELECT 1 FROM psychology_autopilots WHERE group_id=? AND status<>'ended'").bind(group.id).first()) fail('这个分组已经在自动运营中。', 409);
-    const now = Date.now(), id = apiId || 'pilot-' + crypto.randomUUID(), initialStatus=apiOptions.external?'paused':'active';
-    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now,api_request_hash,current_strategy,strategy_started_at,schedule_timezone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(id, user.username, group.id, group.name, body.strategy==='pools'?'evolve':body.strategy, JSON.stringify(slots),initialStatus, addZonedDays(now,days,timeZone), now, now, Number(body.startNow===true),apiHash,body.strategy,now,timeZone).run();
-    if(apiOptions.external){await log(db,id,'status','通过管理 API 创建，已暂停；明确恢复后才会新增排期。',{},now);return json({id,status:initialStatus,revision:now},201);}
+    const now = Date.now(), id = apiId || 'pilot-' + crypto.randomUUID(), initialStatus=apiOptions.external||body.deferStart?'paused':'active';
+    const endsAt=campaignSlots.length?campaignSlots.at(-1)+Math.max(0,(selectedIds.length||group.accounts)-1)*AUTOPILOT.staggerSeconds*1000+60000:addZonedDays(now,days,timeZone);
+    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now,api_request_hash,current_strategy,strategy_started_at,schedule_timezone,content_source,mention_receivers,content_schedule_json,campaign_slots_json,account_ids_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(id, user.username, group.id, group.name, body.strategy==='pools'?'evolve':body.strategy, JSON.stringify(slots),initialStatus, endsAt, now, now, Number(body.startNow===true),apiHash,body.strategy,now,timeZone,contentSource,Number(mentionReceivers),JSON.stringify(contentSchedule),JSON.stringify(campaignSlots),JSON.stringify(selectedIds)).run();
+    if(selectedIds.length)await db.prepare("INSERT INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at) SELECT ?,value,'active','',? FROM json_each(?)").bind(id,now,JSON.stringify(selectedIds)).run();
+    if(apiOptions.external||body.deferStart){await log(db,id,'status','通过管理 API 创建，已暂停；明确恢复后才会新增排期。',{},now);return json({id,status:initialStatus,revision:now},201);}
     await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，${timeZoneLabel(timeZone)} ${slotLabel(slots)}；${body.startNow?'首日不足 2 小时、距离发布超过 10 分钟的时段立即准备；':''}其余按账号数与积压提前 ${PRODUCTION_POLICY.minLeadMs/HOUR}–${PRODUCTION_POLICY.maxLeadMs/HOUR} 小时开始生成。`, {}, now);
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
@@ -710,6 +769,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     }
   }
   if (one[2] === 'strategy' && request.method === 'PATCH') {
+    if(pilotCampaignSlots(pilot).length)fail('待发布素材计划不支持切换账号池策略。',409);
     if (pilot.status === 'ended') fail('已结束的自动运营不能接续策略。',409);
     const body = await readJson(request), days = Number(body.days ?? 7);
     if (body.strategy !== 'pools') fail('接续策略请选择账号池与内容池匹配。');
@@ -730,6 +790,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     return json({ok:true,strategy,pendingStrategy:'pools',effectiveAt,strategyEffectiveAt:effectiveAt,endsAt,revision:stamp});
   }
   if (one[2] === 'schedule' && request.method === 'PATCH') {
+    if(pilotCampaignSlots(pilot).length)fail('具体排期已固定，请结束此计划后重新创建。',409);
     if(pilot.status==='ended')fail('已结束的自动运营不能修改发布设置。',409);
     const body=await readJson(request);if(!Array.isArray(body.slots))fail('请设置每天的发布时间。');
     const slots=normalizePilotSlots(body.slots), timeZone=normalizeTimeZone(body.timeZone??pilotTimeZoneAt(pilot,Math.max(now,Number(pilot.slots_effective_at)||0)));
