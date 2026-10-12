@@ -33,7 +33,8 @@ try{
   await Promise.all([page.waitForNavigation(),page.click('.one-detail-link')]);await page.waitForSelector('#one-audience');
   assert.equal(await page.$eval('.one-report-filters',n=>n.hidden),true);
   assert.equal(await page.$eval('main h1',n=>n.textContent),'TikTok One · 视频数据详情');
-  assert.match(await page.$eval('#one-audience',n=>n.textContent),/美国 · US/);assert.match(await page.$eval('#one-audience',n=>n.textContent),/年龄分组 2/);
+  assert.match(await page.$eval('#one-audience',n=>n.textContent),/美国 · US/);assert.match(await page.$eval('#one-audience',n=>n.textContent),/18–24 岁/);
+  assert.doesNotMatch(await page.$eval('#one-audience',n=>n.textContent),/年龄分组 2|不推测年龄段/);
   assert.equal(await page.$('#one-audience img'),null,'untrusted labels stay text');
   assert.doesNotMatch(await page.$eval('.one-report-data',n=>n.textContent),/广告花费|付费流量/);
   assert.equal(await page.$eval('#one-retention svg path',n=>(n.getAttribute('d').match(/M/g)||[]).length),2,'null retention creates a gap');

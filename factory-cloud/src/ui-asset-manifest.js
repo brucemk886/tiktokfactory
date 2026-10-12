@@ -84,7 +84,7 @@ export const UI_ASSETS = {
   "/psychology-narrative.css": "d2619b7a19c3b0bf5f3e",
   "/psychology-narrative.js": "f7f0539488d3f27e8e03",
   "/psychology-one-analysis-schema.js": "319d4ee80df02b7e53fc",
-  "/psychology-one-analysis.js": "80e6787eb6d8a6c97107",
+  "/psychology-one-analysis.js": "9e3b62ff3e4e7787969f",
   "/psychology-one-report.css": "6ef70dd44bc41c2b1d3c",
   "/psychology-one-report.js": "a896a787ae2aa19a32ee",
   "/psychology-operations.css": "b5e4d380e2339483c7e8",
