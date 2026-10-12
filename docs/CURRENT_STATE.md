@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology autopilot plans can freeze an optional per-slot ready-material schedule, allowing a multi-day campaign to use ready Video Hits videos and photo albums in exact batch counts. Empty schedules preserve the existing plan-wide source. Receiver mentions remain frozen per item for both media types. See docs/handoffs/2026-10-12-autopilot-ready-mix.md.
+
 - Psychology manual video creation now uses the same unchecked @承接账号 option as photo creation, including ready Video Hits clips and generated video templates. Each item draws another saved eligible receiver, freezes it, and appends the CTA to the publishing caption only. TikTok One selection stays unchanged. See docs/handoffs/2026-10-12-video-publish-receivers.md.
 
 - Video Hits ready cards and recreation lists show searchable source/version material IDs and support selected-version batch deletion (up to 100, with cross-page selection on the ready gallery). The confirmation lists titles/IDs; a single permission, revision or task-occupancy conflict rolls back the whole batch. Existing source/single-version deletion, creation timestamps and publishing rules remain. See docs/handoffs/2026-10-12-video-hit-bulk-delete.md.

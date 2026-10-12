@@ -117,9 +117,23 @@ export function pilotLibraryConfig(pilot, slot) {
   return { libraryStrategy: strategy, libraryTestPolicy: strategy === 'pools' ? POOL_POLICY.version : TEST_POLICY,
     ...(strategy === 'pools' ? { poolContext: pilotPoolContext(pilot, slot) } : {}) };
 }
+export function pilotContentModeAt(pilot, slot) {
+  const fallback = pilot.content_source === 'video-hits' ? 'video-hits-video' : 'library-photo';
+  let sequence;
+  try { sequence = JSON.parse(pilot.content_schedule_json || '[]'); } catch { return fallback; }
+  if (!Array.isArray(sequence) || !sequence.length) return fallback;
+  const slots = pilotSlotsAt(pilot, slot), timeZone = pilotTimeZoneAt(pilot, slot), time = zonedParts(slot, timeZone);
+  const round = slots.findIndex(s => s.hour === time.hour && s.minute === time.minute);
+  if (round < 0) return fallback;
+  const dayIndex = Math.max(0, calendarDayIndex(slot, pilot.created_at, timeZone));
+  const mode = sequence[dayIndex * slots.length + round];
+  return ['video-hits-video', 'video-hits-photo', 'library-photo'].includes(mode) ? mode : fallback;
+}
 export function autopilotBatchBody({ pilot, slot, connectionIds, requestId, name, scheduleAt, musicIds }) {
   const shared = { requestId, name, count: connectionIds.length, connectionIds, scheduleAt, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleId: 'classic', musicIds };
-  if (pilot.content_source === 'video-hits') return { ...shared, mediaType: 'video', template: 'selected-video', sourceType: 'video-hits', isAiGenerated: false, selection: 'recent', styleMode: 'legacy', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
+  const contentMode = pilotContentModeAt(pilot, slot);
+  if (contentMode === 'video-hits-video') return { ...shared, mediaType: 'video', template: 'selected-video', sourceType: 'video-hits', isAiGenerated: false, selection: 'recent', styleMode: 'legacy', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
+  if (contentMode === 'video-hits-photo') return { ...shared, mediaType: 'photo', template: 'selected-photo', sourceType: 'video-hits', isAiGenerated: false, selection: 'recent', styleMode: 'legacy', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
   return { ...shared, mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(pilot, slot), pairSeed: pilotPairSeed(pilot, slot), styleMode: 'random', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
 }
 

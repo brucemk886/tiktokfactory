@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots, recoverAutopilotSlot, recoveryOriginalSlot, autopilotBatchBody } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots, recoverAutopilotSlot, recoveryOriginalSlot, autopilotBatchBody, pilotContentModeAt } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -21,6 +21,15 @@ test('video-hit autopilot draws ready videos and mentions a receiver; library pl
   assert.equal(library.sourceType, 'library');
   assert.equal(library.mentionReceiver, undefined);
   assert.throws(() => normalizeAutoPublish({ ...library, mentionReceiver: true, libraryStrategy: 'pools', poolContext: { cycleStartAt: 1, postsPerDay: 2, dayIndex: 0, round: 0 }, scheduleAt: Math.floor(Date.now() / 1000) + 7200 }, Date.now(), { validateSchedule: false }), /承接账号/);
+});
+
+test('autopilot can freeze a per-slot mix of ready videos and ready photo albums', () => {
+  const slots = [{ hour: 22, minute: 30 }, { hour: 23, minute: 30 }];
+  const pilot = { content_source: 'video-hits', content_schedule_json: JSON.stringify(['video-hits-video', 'video-hits-video', 'video-hits-video', 'video-hits-photo']), mention_receivers: 1, slots_json: JSON.stringify(slots), schedule_timezone: 'Asia/Shanghai', strategy: 'evolve', current_strategy: 'evolve', owner: 'bruce', created_at: at('2026-10-12', '19:00') };
+  assert.equal(pilotContentModeAt(pilot, at('2026-10-13', '23:30')), 'video-hits-photo');
+  const body = autopilotBatchBody({ pilot, slot: at('2026-10-13', '23:30'), connectionIds: ['a', 'b'], requestId: '33333333-3333-4333-8333-333333333333', name: 'photo finale', scheduleAt: 1, musicIds: [] });
+  assert.deepEqual([body.sourceType, body.mediaType, body.template, body.mentionReceiver], ['video-hits', 'photo', 'selected-photo', true]);
+  assert.equal(pilotContentModeAt({ ...pilot, content_schedule_json: '[]' }, at('2026-10-13', '23:30')), 'video-hits-video');
 });
 
 test('due slots are the Beijing 08:00 / 12:00 / 21:00 times 2–26 hours ahead, inside the run period', () => {
