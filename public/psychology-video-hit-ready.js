@@ -1,7 +1,22 @@
+import {materialId,mountMaterialDelete} from './psychology-video-hit-delete.js';
 import {mountVideoPosters} from './psychology-video-posters.js';
 export function mountReadyHits(hooks={}){
  const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const root=$('readyLibrary'),posters=mountVideoPosters(root);let page=1,rows=[],canPublish=false,more=false,requestId=0,controller,lastSignature='',query='',importer='',kind='all',imageIndex=0,previewRow=null;
+ const selected=new Map();let loading=false;
+ const remove=mountMaterialDelete(async(data)=>{selected.clear();if($('readyPreviewDialog').open)$('readyPreviewDialog').close();await load();$('readyDeleteStatus').textContent='已删除 '+data.deleted+' 条素材。';});
+ function selectionState(){
+  const count=rows.filter(r=>selected.has(materialId(r.ref))).length;
+  $('readySelectPage').checked=rows.length>0&&count===rows.length;$('readySelectPage').indeterminate=count>0&&count<rows.length;
+  $('readySelectPage').disabled=loading||!rows.length;$('readyDeleteSelected').disabled=loading||!selected.size;$('readyClearSelection').disabled=loading||!selected.size;
+  $('readySelectedCount').textContent='已选 '+selected.size+' 条（可跨页选择，最多 100 条）';
+  root.querySelectorAll('[data-select-material]').forEach(input=>{const checked=selected.has(materialId(rows[Number(input.dataset.selectMaterial)].ref));input.checked=checked;input.disabled=loading;input.closest('.vr-card').classList.toggle('is-selected',checked);});
+  root.querySelectorAll('[data-delete-ready]').forEach(b=>b.disabled=loading);
+ }
+ function choose(r,checked){const key=materialId(r.ref);if(checked){if(selected.size>=100&&!selected.has(key)){$('readyDeleteStatus').textContent='一次最多选择 100 条素材。';return;}selected.set(key,r);}else selected.delete(key);}
+ function clearSelection(){selected.clear();$('readyDeleteStatus').textContent='';selectionState();}
+ $('readySelectPage').onchange=e=>{rows.forEach(r=>choose(r,e.target.checked));selectionState();};
+ $('readyClearSelection').onclick=clearSelection;$('readyDeleteSelected').onclick=()=>remove([...selected.values()]);
  root.hidden=false;
  const detail=r=>'/psychology-video-hits/detail?id='+r.ref.sourceId+'&version='+r.ref.version;
  const created=value=>{const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';};
@@ -10,12 +25,12 @@ export function mountReadyHits(hooks={}){
   $('readyCards').innerHTML=rows.map((r,i)=>{
    const photo=r.canPhoto&&kind!=='video';
    const cover=photo?'<button class="vr-photo-cover" data-preview="'+i+'" aria-label="预览图文：'+esc(r.title)+'"><img src="'+esc(r.frames[0].previewUrl)+'" alt="'+esc(r.title)+' · 第1张" loading="lazy" referrerpolicy="no-referrer"><span>'+r.frames.length+' 张图片 · 点击预览</span></button>':'<div class="vr-player"><video controls playsinline preload="none" src="'+esc(r.previewUrl)+'" data-cover-src="'+esc(r.previewUrl)+'" aria-label="预览 '+esc(r.title)+'"></video><span class="video-cover-status" role="status">读取封面…</span><button type="button" class="video-cover-button" aria-label="播放视频预览" hidden><img alt="成片封面"><span aria-hidden="true">▶</span></button></div>';
-   return '<article class="vr-card">'+cover+'<div class="vr-card-body"><div class="vr-badges">'+(r.canPhoto?'<span>图文 · '+r.frames.length+' 张</span>':'')+(r.canVideo?'<span>视频成片</span>':'')+'<span class="vr-ready">待发布</span></div><h3>'+esc(r.title)+'</h3><p class="vr-provenance">'+esc(r.importSource)+' · '+esc(r.ownerUsername||'未知用户')+' · '+esc(r.name)+'</p><p class="vr-created">创建时间 <time datetime="'+(Number(r.createdAt)>0?new Date(r.createdAt).toISOString():'')+'">'+esc(created(r.createdAt))+'</time></p><details class="vr-caption"><summary>查看发布文案</summary><p>'+esc(r.caption)+'</p></details><div class="vr-card-actions">'+(canPublish?(r.canPhoto?'<a class="vr-primary" href="'+publish(r,'photo')+'">创建图文任务</a>':'')+(r.canVideo?'<a class="vr-primary" href="'+publish(r,'video')+'">创建视频任务</a>':''):'<span class="vh-note">需要心理学发布权限才能创建任务</span>')+'</div><div class="vr-secondary"><a href="'+detail(r)+'">查看二创详情</a>'+(photo&&r.canVideo?'<button data-preview-video="'+i+'">播放成片</button>':'')+(canPublish&&r.canVideo?'<a href="'+publish(r,'video','one')+'">TikTok One 发布</a>':'')+'<button type="button" class="vh-delete" data-delete-ready="'+i+'">删除</button></div></div></article>';
+   return '<article class="vr-card"><label class="vr-select"><input type="checkbox" data-select-material="'+i+'" aria-label="选择素材 '+esc(materialId(r.ref))+'">选择素材</label>'+cover+'<div class="vr-card-body"><div class="vr-badges">'+(r.canPhoto?'<span>图文 · '+r.frames.length+' 张</span>':'')+(r.canVideo?'<span>视频成片</span>':'')+'<span class="vr-ready">待发布</span></div><h3>'+esc(r.title)+'</h3><p class="vh-material-id">素材 ID <code>'+esc(materialId(r.ref))+'</code></p><p class="vr-provenance">'+esc(r.importSource)+' · '+esc(r.ownerUsername||'未知用户')+' · '+esc(r.name)+'</p><p class="vr-created">创建时间 <time datetime="'+(Number(r.createdAt)>0?new Date(r.createdAt).toISOString():'')+'">'+esc(created(r.createdAt))+'</time></p><details class="vr-caption"><summary>查看发布文案</summary><p>'+esc(r.caption)+'</p></details><div class="vr-card-actions">'+(canPublish?(r.canPhoto?'<a class="vr-primary" href="'+publish(r,'photo')+'">创建图文任务</a>':'')+(r.canVideo?'<a class="vr-primary" href="'+publish(r,'video')+'">创建视频任务</a>':''):'<span class="vh-note">需要心理学发布权限才能创建任务</span>')+'</div><div class="vr-secondary"><a href="'+detail(r)+'">查看二创详情</a><button type="button" class="vh-danger" data-delete-ready="'+i+'">删除</button>'+(photo&&r.canVideo?'<button data-preview-video="'+i+'">播放成片</button>':'')+(canPublish&&r.canVideo?'<a href="'+publish(r,'video','one')+'">TikTok One 发布</a>':'')+'</div></div></article>';
   }).join('')||'<div class="vr-empty"><strong>暂无符合条件的待发布素材</strong><p>仅展示已启用、素材齐全且未提交发布的二创。可调整筛选，或到来源管理补齐并启用版本。</p><a href="/psychology-video-hits?view=sources">查看来源管理 →</a></div>';
-  posters.refresh();
+  posters.refresh();selectionState();
  }
  async function load(){
-  const seq=++requestId;controller?.abort();controller=new AbortController();$('readyStatus').textContent='正在读取待发布素材…';$('readyPrev').disabled=true;$('readyNext').disabled=true;
+  const seq=++requestId;loading=true;selectionState();controller?.abort();controller=new AbortController();$('readyStatus').textContent='正在读取待发布素材…';$('readyPrev').disabled=true;$('readyNext').disabled=true;
   try{
    const response=await fetch('/api/psychology-video-hits/ready?'+new URLSearchParams({page,mediaType:kind,q:query,importSource:importer}),{cache:'no-store',signal:controller.signal}),data=await response.json();if(!response.ok)throw Error(data.error||'待发布素材读取失败');if(seq!==requestId)return;
    if(page>Math.max(1,Math.ceil(data.total/data.pageSize))){page=1;return load();}
@@ -24,16 +39,17 @@ export function mountReadyHits(hooks={}){
    const signature=JSON.stringify([rows,canPublish,kind]);if(signature!==lastSignature){lastSignature=signature;render();}
    $('readyStatus').textContent='当前筛选共 '+data.total+' 个待发布版本 · 已排除已发布、已提交任务和未准备好的内容';$('readyPage').textContent='第 '+(data.total?page:0)+' / '+Math.ceil(data.total/data.pageSize)+' 页';
   }catch(e){if(seq!==requestId||e.name==='AbortError')return;$('readyStatus').textContent=e.message;rows=[];more=false;lastSignature='';$('readyCards').innerHTML='<div class="vr-empty">读取失败，请点击刷新重试。</div>';for(const k of ['all','photo','video'])$('readyCount-'+k).textContent='—';}
-  finally{if(seq===requestId){$('readyPrev').disabled=page<=1;$('readyNext').disabled=!more;}}
+  finally{if(seq===requestId){loading=false;selectionState();$('readyPrev').disabled=page<=1;$('readyNext').disabled=!more;}}
  }
  function showPhoto(){const frame=previewRow.frames[imageIndex];$('readyPreviewImage').src=frame.previewUrl;$('readyPreviewImage').alt=previewRow.title+' · 第 '+(imageIndex+1)+' 张';$('readyPreviewText').textContent=frame.text||'';$('readyPreviewPosition').textContent=(imageIndex+1)+' / '+previewRow.frames.length;$('readyImagePrev').disabled=imageIndex===0;$('readyImageNext').disabled=imageIndex===previewRow.frames.length-1;}
  function preview(row,video){previewRow=row;imageIndex=0;$('readyPreviewTitle').textContent=row.title;$('readyPreviewCaption').textContent=row.caption;$('readyPreviewPhotos').hidden=video;$('readyPreviewVideo').hidden=!video;if(video)$('readyPreviewVideo').src=row.previewUrl;else showPhoto();$('readyPreviewDialog').showModal();}
- $('readyCards').onclick=e=>{const image=e.target.closest('[data-preview]'),video=e.target.closest('[data-preview-video]'),remove=e.target.closest('[data-delete-ready]');if(remove){const row=rows[Number(remove.dataset.deleteReady)];hooks.onDelete?.({kind:'version',id:row.ref.sourceId,version:row.ref.version,revision:row.ref.revision,title:row.title,refresh:load});return;}if(image)preview(rows[Number(image.dataset.preview)],false);if(video)preview(rows[Number(video.dataset.previewVideo)],true);};
+ $('readyCards').onchange=e=>{const input=e.target.closest('[data-select-material]');if(input){choose(rows[Number(input.dataset.selectMaterial)],input.checked);selectionState();}};
+ $('readyCards').onclick=e=>{const deletion=e.target.closest('[data-delete-ready]');if(deletion){const row=rows[Number(deletion.dataset.deleteReady)];hooks.onDelete?.({kind:'version',id:row.ref.sourceId,version:row.ref.version,revision:row.ref.revision,title:row.title,refresh:async()=>{selected.clear();await load();}});return;}const image=e.target.closest('[data-preview]'),video=e.target.closest('[data-preview-video]');if(image)preview(rows[Number(image.dataset.preview)],false);if(video)preview(rows[Number(video.dataset.previewVideo)],true);};
  $('readyClosePreview').onclick=()=>$('readyPreviewDialog').close();$('readyPreviewDialog').addEventListener('close',()=>{$('readyPreviewVideo').pause();$('readyPreviewVideo').removeAttribute('src');$('readyPreviewImage').removeAttribute('src');});
  $('readyImagePrev').onclick=()=>{if(imageIndex>0){imageIndex--;showPhoto();}};$('readyImageNext').onclick=()=>{if(imageIndex<previewRow.frames.length-1){imageIndex++;showPhoto();}};
- $('readyFilters').onsubmit=e=>{e.preventDefault();query=$('readyQuery').value.trim();importer=$('readyImporter').value.trim();page=1;load();};
- $('readyTypes').onclick=e=>{const b=e.target.closest('[data-ready-type]');if(!b)return;kind=b.dataset.readyType;page=1;for(const n of $('readyTypes').querySelectorAll('button'))n.setAttribute('aria-pressed',String(n===b));load();};
- $('readyRefresh').onclick=()=>{posters.retryFailures();load();};$('readyPrev').onclick=()=>{page--;load();};$('readyNext').onclick=()=>{page++;load();};
+ $('readyFilters').onsubmit=e=>{e.preventDefault();clearSelection();query=$('readyQuery').value.trim();importer=$('readyImporter').value.trim();page=1;load();};
+ $('readyTypes').onclick=e=>{const b=e.target.closest('[data-ready-type]');if(!b)return;clearSelection();kind=b.dataset.readyType;page=1;for(const n of $('readyTypes').querySelectorAll('button'))n.setAttribute('aria-pressed',String(n===b));load();};
+ $('readyRefresh').onclick=()=>{clearSelection();posters.retryFailures();load();};$('readyPrev').onclick=()=>{page--;load();};$('readyNext').onclick=()=>{page++;load();};
  root.addEventListener('play',e=>{if(e.target.tagName==='VIDEO')root.querySelectorAll('video').forEach(v=>{if(v!==e.target)v.pause();});},true);
  window.addEventListener('pageshow',e=>{if(e.persisted)load();});document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
  load();

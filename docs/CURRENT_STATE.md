@@ -1,5 +1,7 @@
 # Current State
 
+- Video Hits ready cards and recreation lists show searchable source/version material IDs and support selected-version batch deletion (up to 100, with cross-page selection on the ready gallery). The confirmation lists titles/IDs; a single permission, revision or task-occupancy conflict rolls back the whole batch. Existing source/single-version deletion, creation timestamps and publishing rules remain. See docs/handoffs/2026-10-12-video-hit-bulk-delete.md.
+
 - TikTok One video-detail audience charts decode official age codes 1–6 into 13–17, 18–24, 25–34, 35–44, 45–54 and 55+ years. Original percentages stay unchanged; unknown codes remain explicit. See docs/handoffs/2026-10-12-one-age-labels.md.
 
 - An autopilot plan can draw unused Video Hits ready videos instead of the copy library, and can append a saved @receiver CTA to each caption. Existing plans stay on the copy library with mentions off. See docs/handoffs/2026-10-11-autopilot-video-hit-mentions.md.

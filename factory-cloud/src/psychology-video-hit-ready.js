@@ -33,17 +33,17 @@ export async function handleVideoHitReady(request,env,url,session){
  FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id LEFT JOIN factory_users u ON u.id=s.owner_id
  WHERE (s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND v.publish_state<>'published' AND v.published_at=0
  AND NOT EXISTS(SELECT 1 FROM psychology_peer_account_usage used WHERE used.source_id=v.source_id||':v'||v.version)
- AND (?='' OR s.import_source=?) AND (v.title LIKE ? OR v.caption LIKE ? OR s.title LIKE ? OR s.external_id LIKE ?)
+ AND (?='' OR s.import_source=?) AND (v.title LIKE ? OR v.caption LIKE ? OR s.title LIKE ? OR s.external_id LIKE ? OR v.source_id||':v'||v.version LIKE ?)
  AND (?='' OR (v.source_id=? AND v.version=? AND v.revision=?))
  ), ready AS (SELECT * FROM candidates WHERE can_photo=1 OR ready_asset_id IS NOT NULL) `;
- const args=[user.id,hitAdmin(user),importer,importer,...Array(4).fill('%'+q+'%'),id,id,version,revision];
+ const args=[user.id,hitAdmin(user),importer,importer,...Array(5).fill('%'+q+'%'),id,id,version,revision];
  const filter=media==='photo'?'can_photo=1':media==='video'?'ready_asset_id IS NOT NULL':'1=1';
  const [counts,rows]=await Promise.all([
   env.DB.prepare(cte+'SELECT COUNT(*) total,COALESCE(SUM(can_photo),0) photos,COUNT(ready_asset_id) videos FROM ready').bind(...args).first(),
   env.DB.prepare(cte+'SELECT * FROM ready WHERE '+filter+' ORDER BY updated_at DESC,source_id,version LIMIT ? OFFSET ?').bind(...args,size,(page-1)*size).all()
  ]);
  const total=media==='photo'?counts.photos:media==='video'?counts.videos:counts.total;
- const items=await Promise.all(rows.results.map(async v=>({ref:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title,caption:v.caption||v.title,name:v.name,sourceTitle:v.source_title,externalId:v.external_id,importSource:v.import_source,ownerUsername:v.owner_username||'',canPhoto:Boolean(v.can_photo),canVideo:Boolean(v.ready_asset_id),assetId:v.ready_asset_id||'',previewUrl:v.ready_asset_id?'/api/psychology-video-hits/ready/media/'+v.ready_asset_id+'/file':'',frames:v.can_photo?(await allFrames(env.DB,v.source_id,v.version)).map(f=>({index:f.index,previewUrl:f.previewUrl,text:f.text})):[],createdAt:v.created_at,updatedAt:v.updated_at})));
+ const items=await Promise.all(rows.results.map(async v=>({materialId:v.source_id+':v'+v.version,ref:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title,caption:v.caption||v.title,name:v.name,sourceTitle:v.source_title,externalId:v.external_id,importSource:v.import_source,ownerUsername:v.owner_username||'',canPhoto:Boolean(v.can_photo),canVideo:Boolean(v.ready_asset_id),assetId:v.ready_asset_id||'',previewUrl:v.ready_asset_id?'/api/psychology-video-hits/ready/media/'+v.ready_asset_id+'/file':'',frames:v.can_photo?(await allFrames(env.DB,v.source_id,v.version)).map(f=>({index:f.index,previewUrl:f.previewUrl,text:f.text})):[],createdAt:v.created_at,updatedAt:v.updated_at})));
  if(id&&!items.length)fail('这条素材已修改、已提交发布或尚未准备好，请返回待发布素材刷新后重新选择。',409);
  return json({page,pageSize:size,total,hasMore:page*size<total,counts,canPublish:hasPsychologyModule(user,'psychology-publish'),items});
 }

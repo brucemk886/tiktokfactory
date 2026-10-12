@@ -88,7 +88,32 @@ function releaseMedia(db,sourceId,version,now=Date.now()){
   db.prepare('DELETE FROM psychology_imported_photo_skips WHERE '+rowFilter).bind(...frameArgs)
  ];
 }
+function releaseSelectedMedia(db,refs,now){
+ const selected=alias=>`EXISTS(SELECT 1 FROM json_each(?) selected WHERE json_extract(selected.value,'$.sourceId')=${alias}.source_id AND json_extract(selected.value,'$.version')=${alias}.version)`,selection=JSON.stringify(refs),retry=now-RETRY_MS;
+ return [
+  db.prepare(`UPDATE psychology_video_hit_assets AS a SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE cleanup_state IN ('active','uploading') AND a.id IN (SELECT f.asset_id FROM psychology_video_hit_frames f WHERE f.asset_id<>'' AND ${selected('f')}) AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_frames f WHERE f.asset_id=a.id AND NOT ${selected('f')}) AND NOT ${jobHold('image','a.id')}`).bind(selection,selection,retry),
+  db.prepare(`UPDATE psychology_video_hit_videos AS a SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE cleanup_state IN ('active','uploading') AND a.id IN (SELECT v.video_asset_id FROM psychology_video_hit_versions v WHERE v.video_asset_id<>'' AND ${selected('v')}) AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_versions other WHERE other.video_asset_id=a.id AND NOT ${selected('other')}) AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_video_usage used WHERE used.owner_id=a.owner_id AND used.digest=a.digest) AND NOT ${jobHold('video','a.id')}`).bind(selection,selection,retry),
+  db.prepare(`UPDATE psychology_video_assets AS mirror SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE mirror.cleanup_state<>'deleted' AND mirror.id IN (SELECT a.id FROM psychology_video_hit_videos a WHERE a.cleanup_state='deleting' AND a.id IN (SELECT v.video_asset_id FROM psychology_video_hit_versions v WHERE ${selected('v')})) AND mirror.r2_key=(SELECT r2_key FROM psychology_video_hit_videos WHERE id=mirror.id)`).bind(selection),
+  db.prepare(`UPDATE psychology_video_assets AS a SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE cleanup_state='active' AND EXISTS(SELECT 1 FROM psychology_video_hit_render_assets r WHERE r.asset_id=a.id AND ${selected('r')}) AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_render_assets r WHERE r.asset_id=a.id AND NOT ${selected('r')}) AND NOT ${jobHold('video','a.id')}`).bind(selection,selection,retry),
+  ...['psychology_video_hit_frames','psychology_video_hit_local_files','psychology_imported_photo_skips'].map(table=>db.prepare(`DELETE FROM ${table} AS row WHERE ${selected('row')}`).bind(selection))
+ ];
+}
+async function deleteSelectedVersions(request,env,url,session){
+ if(request.method!=='POST')fail('请求方法无效。',405);
+ if((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site')fail('不允许跨站修改。',403);
+ const db=env.DB,user=await videoHitUser(db,session?.user),body=await readManagementBody(request);only(body,['requestId','items']);
+ if(!Array.isArray(body.items)||body.items.length<1||body.items.length>100)fail('每次请选择 1–100 条素材。');const keys=new Set();
+ for(const r of body.items){if(!r||typeof r!=='object'||Array.isArray(r))fail('素材标识无效。');only(r,['sourceId','version','revision']);if(!/^vh-[a-f0-9]{32}$/.test(r.sourceId||'')||!Number.isSafeInteger(r.version)||r.version<1||r.version>2147483647||!Number.isSafeInteger(r.revision)||r.revision<1)fail('素材标识或 revision 无效。');const key=r.sourceId+':v'+r.version;if(keys.has(key))fail('请勿重复选择同一素材。');keys.add(key);}
+ return mutation(db,user,body,'versions.delete',async()=>{
+  const selection=JSON.stringify(body.items),rows=(await db.prepare(`SELECT v.*,${versionBlocked} blocked FROM psychology_video_hit_versions v JOIN psychology_video_hits h ON h.id=v.source_id JOIN json_each(?) selected ON json_extract(selected.value,'$.sourceId')=v.source_id AND json_extract(selected.value,'$.version')=v.version WHERE (h.owner_id=? OR ?=1)`).bind(selection,user.id,hitAdmin(user)).all()).results;
+  if(rows.length!==body.items.length)fail('选中的素材不存在或无权删除，本次未删除任何素材。',404);
+  const byKey=new Map(rows.map(v=>[v.source_id+':v'+v.version,v]));for(const r of body.items){const v=byKey.get(r.sourceId+':v'+r.version);if(v.revision!==r.revision)fail('素材 '+r.sourceId+':v'+r.version+' 已修改，请刷新；本次未删除任何素材。',409);if(v.blocked)fail('素材 '+r.sourceId+':v'+r.version+' 已进入生成或发布流程；本次未删除任何素材。',409);}
+  const selected=`EXISTS(SELECT 1 FROM json_each(?) selected WHERE json_extract(selected.value,'$.sourceId')=v.source_id AND json_extract(selected.value,'$.version')=v.version AND json_extract(selected.value,'$.revision')=v.revision)`,access=`EXISTS(SELECT 1 FROM psychology_video_hits h JOIN factory_users u ON u.id=? AND u.active=1 WHERE h.id=v.source_id AND u.role IN ('admin','operator') AND (u.role='admin' OR h.owner_id=u.id) AND EXISTS(SELECT 1 FROM json_each(u.sidebar_modules_json) grant_module WHERE grant_module.value='psychology-video-hits'))`,now=Date.now();
+  return {statements:[db.prepare(`UPDATE psychology_video_hit_versions AS v SET updated_at=CASE WHEN updated_at=? THEN updated_at+1 ELSE ? END WHERE ${selected} AND NOT ${versionBlocked} AND ${access}`).bind(now,now,selection,user.id),db.prepare('UPDATE psychology_video_hit_guards SET ok=CASE WHEN changes()=? THEN 1 ELSE 0 END WHERE id=1').bind(body.items.length),...releaseSelectedMedia(db,body.items,now),db.prepare(`DELETE FROM psychology_video_hit_versions AS v WHERE ${selected} AND NOT ${versionBlocked}`).bind(selection),db.prepare('UPDATE psychology_video_hit_guards SET ok=CASE WHEN changes()=? THEN 1 ELSE 0 END WHERE id=1').bind(body.items.length)],result:{ok:true,deleted:body.items.length,items:body.items.map(r=>({sourceId:r.sourceId,version:r.version,materialId:r.sourceId+':v'+r.version}))}};
+ });
+}
 export async function handleVideoHitCleanup(request,env,url,session){
+ if(url.pathname===VIDEO_HITS_BASE+'/versions/delete')return deleteSelectedVersions(request,env,url,session);
  const remove=url.pathname.match(/^\/api\/psychology-video-hits\/(vh-[a-f0-9]{32})(?:\/versions\/(\d+))?\/delete$/);
  const archive=url.pathname.match(/^\/api\/psychology-video-hits\/(vh-[a-f0-9]{32})\/(archive|restore)$/),status=url.pathname===VIDEO_HITS_BASE+'/cleanup';
  if(remove){
