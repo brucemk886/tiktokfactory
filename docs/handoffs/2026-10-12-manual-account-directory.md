@@ -17,8 +17,17 @@ factory-cloud/src/official.js and tests; public/tiktok-connections.js; shared sc
 ## Tests performed
 Focused backend/local/UI suite: 52/52 passed. Full declared Factory regression: 1552/1552 passed with four workers. JavaScript syntax, git diff and asset manifest checks passed. Tests use synthetic data; no live publishing or account mutations.
 
+Production release `76836c9d200f98a65ec0d4cf70042dbebf196e9d` was pushed to `origin/main` and deployed with `npm run deploy`. Cloudflare Worker version: `81ca9615-28dd-40a5-a278-28ed4e395e36`.
+
+Live desktop verification on 2026-10-12 confirmed:
+- Page entry requested `/api/private-tiktok/accounts` without `refresh=1`; no separate publish-accounts request was made.
+- Hosted settings displayed the environment-backed bridge as connected.
+- Before the first refresh, the page explicitly labeled the 85-account archive fallback as unsaved.
+- Clicking Refresh Accounts made one `/api/private-tiktok/accounts?refresh=1` request and saved 86 current Factory-visible accounts, 3 projects and 15 groups at 2026-10-12 15:39:17 Asia/Taipei.
+- A subsequent full page reload requested only `/api/private-tiktok/accounts`, displayed the saved 86-account snapshot and retained the same update timestamp.
+
 ## Unfinished work
-Production deployment and live page verification remain.
+None for this change.
 
 ## Recommended next step
-After release, click Refresh Accounts once to save a complete current directory. Subsequent page reloads use that snapshot until the next manual refresh.
+Use Refresh Accounts only when a fresh Hub directory is required. Normal page reloads continue reading the saved snapshot.
