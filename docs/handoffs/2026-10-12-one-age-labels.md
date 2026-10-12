@@ -20,7 +20,12 @@ Show concrete viewer age bands instead of opaque age group codes in both Psychol
 - No live publication API was called.
 
 ## Unfinished work
-Production deployment and read-only verification follow this commit.
+None. Deployed and checked against a real authorized One video detail.
 
 ## Recommended next step
 Refresh a One video detail and inspect its audience age bands; the former code 2 should show 18–24 years without changing its percentage.
+
+## Release verification
+- Runtime commit 6a44b03 was pushed to main before deployment from a clean main release checkout with exact HEAD == origin/main. npm run deploy completed; no migrations were pending. Worker version b4cdb674-d119-40f7-8374-201b414fc369.
+- Authenticated production video details rendered all six concrete age bands and their returned percentages. A checked sample showed 18–24 at 53.72%; raw report values were not rewritten. Page resource checks found no HTTP errors.
+- Primary official doc node returned code 0 with content_slug report-on-tto-creator-marketplace-videos and the explicit numeric-string age mapping. The browser session was stopped. Local ignored evidence contains no credentials and is not committed.
