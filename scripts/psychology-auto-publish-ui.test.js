@@ -329,7 +329,7 @@ test('refresh removes accounts that fall below threshold; zero is distinct from 
 test('One shortcut opens video with thousand filtering and never creates a task',async()=>{
  const h=harness(Promise.resolve(followerAccounts),false,topicOptions);await h.ready;
  await h.mediaButtons[1].click();await h.node('#newOneBatch').listeners.click();
- assert.equal(h.node('#createBatchDialog').hidden,false);assert.equal(h.node('#accountFollowers').value,'1000');
+ assert.equal(h.node('#createBatchDialog').hidden,false);assert.equal(h.node('#accountFollowers').value,'1000');assert.equal(h.node('#photoReceiverSettings').hidden,true);
  assert.equal(h.node('#oneEnabled').checked,true);assert.equal(h.node('#topicBankField').hidden,false);
  assert.doesNotMatch(h.node('#accounts').innerHTML,/@under|@unknown/);assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
 });
@@ -344,11 +344,14 @@ test('normal publication draws saved hit videos without a template and requires 
 });
 
 
-test('manual photo receiver option loads saved CTA, applies to generated-photo sources and stays out of video requests',async()=>{
- const h=harness(Promise.resolve(grouped));await h.ready;assert.equal(h.node('#photoReceiverSettings').hidden,true);await h.mediaButtons[1].click();assert.equal(h.node('#photoReceiverSettings').hidden,false);
- h.node('#photoSource').value='copy-library';h.node('#photoSource').onchange();h.node('#mentionReceiver').checked=true;h.node('#mentionReceiver').listeners.change();await tick();assert.match(h.node('#photoReceiverStatus').textContent,/@target_one/);assert.match(h.node('#photoReceiverCta').textContent,/@随机承接账号/);
- h.node('#selectVisibleAccounts').listeners.click();h.node('#count').value='4';await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,true);
- await h.mediaButtons[0].click();assert.equal(h.node('#photoReceiverSettings').hidden,true);await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,undefined);
+test('manual receiver option loads saved CTA for video and photo and stays off until checked',async()=>{
+ const h=harness(Promise.resolve(grouped));await h.ready;assert.equal(h.node('#photoReceiverSettings').hidden,false);
+ h.node('#selectVisibleAccounts').listeners.click();h.node('#count').value='4';await h.node('#batchForm').listeners.submit({preventDefault(){}});
+ assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mediaType,'video');assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,undefined);
+ h.node('#mentionReceiver').checked=true;h.node('#mentionReceiver').listeners.change();await tick();assert.match(h.node('#photoReceiverStatus').textContent,/@target_one/);assert.match(h.node('#photoReceiverCta').textContent,/@随机承接账号/);assert.match(h.node('#summary').textContent,/每条视频随机/);
+ await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,true);assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mediaType,'video');
+ await h.mediaButtons[1].click();assert.equal(h.node('#photoReceiverSettings').hidden,false);h.node('#photoSource').value='copy-library';h.node('#photoSource').onchange();
+ await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mediaType,'photo');assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,true);
 });
 test('task item detail displays the frozen receiver and escapes final caption content',async()=>{
  const batches={batches:[{id:'receiver-batch',createdAt:Date.now(),config:{name:'Receiver task',mediaType:'photo',count:1},items:[{id:'i',connectionId:'a',status:'queued',photoReceiver:{username:'target_one',cta:'Visit @target_one.'},finalCaption:'Original <script>unsafe</script>\nVisit @target_one.'}]}]};

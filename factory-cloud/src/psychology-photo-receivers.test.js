@@ -27,7 +27,8 @@ test('manual photo opt-in is typed, photo-only and omitted when disabled for bac
  const body=input({mediaType:'photo',template:'photo-text'}),plain=normalizeAutoPublish(body);
  assert.deepEqual(normalizeAutoPublish({...body,mentionReceiver:false}),plain);assert.equal(Object.hasOwn(plain,'mentionReceiver'),false);
  assert.equal(normalizeAutoPublish({...body,mentionReceiver:true}).mentionReceiver,true);
- for(const extra of [{mentionReceiver:'true'},{mentionReceiver:true,mediaType:'video',template:'psychology'},{mentionReceiver:true,libraryStrategy:'pools'},{mentionReceiver:true,poolContext:{}}])assert.throws(()=>normalizeAutoPublish({...body,...extra}),/手动|请选择/);
+ assert.equal(normalizeAutoPublish({...body,mediaType:'video',template:'psychology',mentionReceiver:true}).mentionReceiver,true);
+ for(const extra of [{mentionReceiver:'true'},{mentionReceiver:true,libraryStrategy:'pools'},{mentionReceiver:true,poolContext:{}}])assert.throws(()=>normalizeAutoPublish({...body,...extra}),/承接账号|请选择/);
 });
 test('receiver pool reads only current owner saved settings, fresh grants, linked eligible and authorized accounts',async t=>{
  const f=await setup(t);f.settings(undefined,1,'someone-else');assert.deepEqual((await photoReceiverPool(f.env,actor)).receivers,[]);
@@ -69,6 +70,12 @@ test('queued photo task rechecks frozen receiver access and refuses rename or re
  const f=await setup(t);f.settings([f.accounts[1]]);await f.call('POST',photoInput([await f.ready()],{mentionReceiver:true}));const job=f.jobs()[0];await assertAutoJobAccess(f.env,job);
  f.accounts[1].username='changed';await assert.rejects(assertAutoJobAccess(f.env,job),e=>e.statusCode===403);f.accounts[1].username='beta';f.accounts[1].scopes=[];await assert.rejects(assertAutoJobAccess(f.env,job),e=>e.statusCode===403);
  assert.equal(JSON.parse(f.jobs()[0].payload_json).psychologyAutomation.photoReceiver.username,'beta');assert.equal(f.requests.length,0);
+});
+test('generated video source freezes a receiver and appends the CTA only to the publishing caption',async t=>{
+ const f=await setup(t);f.settings([f.accounts[1]]);const body=input({mediaType:'video',template:'psychology',connectionIds:['a'],count:1,mentionReceiver:true});await f.call('POST',body);
+ const source=f.jobs()[0],payload=JSON.parse(source.payload_json);assert.equal(payload.psychologyAutomation.photoReceiver.username,'beta');
+ assert.match(payload.publish.videoDesc,/Video idea \d+\n\nTake the test at @beta\./);assert.equal(payload.script.includes('Take the test'),false);assert.equal(payload.topic.includes('@beta'),false);
+ const page=await(await f.call()).json();assert.equal(page.batches[0].items[0].finalCaption,payload.publish.videoDesc);assert.equal(page.batches[0].items[0].photoReceiver.username,'beta');
 });
 test('generated photo source freezes recipient before generation and final handoff appends CTA without changing page content',async t=>{
  const f=await setup(t);f.settings([f.accounts[1]]);const body=input({mediaType:'photo',template:'photo-text',connectionIds:['a'],count:1,mentionReceiver:true,styleMode:'legacy'});await f.call('POST',body);

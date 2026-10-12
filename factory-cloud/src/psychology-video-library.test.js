@@ -80,6 +80,15 @@ async function hitFixture(f,{digest,version=1,sourceId,enabled=1}={}){
 }
 const oneHit=h=>{const c=config(h.asset.id);c.items[0].videoHit=h.ref;return c;};
 const normalHit=(f,overrides={})=>{const body=autoInput({sourceType:'video-hits',template:'selected-video',count:1,connectionIds:['a'],isAiGenerated:true,...overrides}),r=new Request('https://factory.test/api/psychology-auto-publish',{method:'POST',body:JSON.stringify(body)});return handlePsychologyAutoPublish(r,f.env,new URL(r.url),{user});};
+test('normal video-hit publishing appends one frozen receiver CTA without rewriting the saved caption',async t=>{
+ const f=await setup(t),h=await hitFixture(f);
+ f.sqlite.prepare('UPDATE official_accounts_latest SET profile_json=? WHERE account_key=?').run(JSON.stringify({username:'beta',followers:1500}),'tiktok:b');
+ f.sqlite.prepare('INSERT INTO psychology_imported_photo_settings(owner,revision,config_json) VALUES(?,?,?)').run('admin',1,JSON.stringify({receivers:[{connectionId:'b',username:'beta',linkReady:true}],cta:{mention:'Take the test at {account}.',self:'Take the test via my bio.'}}));
+ assert.equal((await normalHit(f,{mentionReceiver:true})).status,202);
+ const payload=JSON.parse(f.sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE type='psychology-selected-video'").get().payload_json);
+ assert.equal(payload.psychologyAutomation.photoReceiver.username,'beta');assert.equal(payload.publish.videoDesc,'Saved hit caption 1\n\nTake the test at @beta.');
+ assert.equal(f.sqlite.prepare('SELECT caption FROM psychology_video_hit_versions').get().caption,'Saved hit caption 1');assert.equal(h.ref.version,1);
+});
 test('hit picker carries saved caption and version identity, excludes reserved/disabled/foreign/cleaned versions',async t=>{
  const f=await setup(t),h=await hitFixture(f);await hitFixture(f,{enabled:0});const foreign=await hitFixture(f);f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(foreign.ref.sourceId);
  let list=await (await f.call('?source=video-hits')).json();assert.equal(list.videos.length,2,'administrator sees member sources too');list.videos=list.videos.filter(v=>v.videoHit.sourceId===h.ref.sourceId);f.sqlite.prepare('UPDATE psychology_video_hit_versions SET enabled=0 WHERE source_id=?').run(foreign.ref.sourceId);assert.equal(list.videos[0].caption,'Saved hit caption 1');assert.deepEqual(list.videos[0].videoHit,h.ref);assert.equal(list.videos[0].assetId,h.asset.id);assert.ok(list.videos[0].previewUrl);

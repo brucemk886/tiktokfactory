@@ -257,6 +257,7 @@ export function autoVideoPayload(source, config, item, accounts) {
     : hasCompleteFourImages(choices) ? fourImageCopyText(choices) : peerCopy(source);
   const title = String(source.title || copy.slice(0, 120)).trim();
   if (!title) fail('选题缺少标题或文案。');
+  const videoDesc = item.photoReceiver ? applyPhotoReceiverCaption({ title, caption: title }, item.photoReceiver).caption : title.slice(0, 2200);
   if (config.template === 'psychology' && config.sourceType === 'topic-bank' && !hasCompleteFourImages(choices)) {
     fail('四图题目需要 A/B/C/D 四张图片和对应文案。');
   }
@@ -286,7 +287,7 @@ export function autoVideoPayload(source, config, item, accounts) {
     publish: { provider: 'official', autoPublish: true, connectionIds: [item.connectionId],
       officialAccounts: accounts.filter(a => String(a.connectionId || a.id) === item.connectionId).map(a => ({
         connectionId: String(a.connectionId || a.id), name: a.displayName || a.username || '', username: a.username || '', groupName: a.groupName || '' })),
-      scheduleAt: item.scheduleAt, intervalMinutes: config.intervalMinutes, videoDesc: title.slice(0, 2200),
+      scheduleAt: item.scheduleAt, intervalMinutes: config.intervalMinutes, videoDesc,
       envIds: [], accounts: [] },
   };
 }
@@ -325,7 +326,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const total=countRows.results[0].n;
     const ids=JSON.stringify(batches.results.map(batch=>batch.id));
     const [allItems,allGroups]=batches.results.length?await env.DB.batch([
-      env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at,json_extract(j.payload_json,'$.psychologyAutomation.photoReceiver') photo_receiver_json,CASE WHEN json_extract(j.payload_json,'$.psychologyAutomation.photoReceiver') IS NOT NULL THEN json_extract(j.payload_json,'$.plan.caption') END receiver_caption
+      env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at,json_extract(j.payload_json,'$.psychologyAutomation.photoReceiver') photo_receiver_json,CASE WHEN json_extract(j.payload_json,'$.psychologyAutomation.photoReceiver') IS NOT NULL THEN COALESCE(json_extract(j.payload_json,'$.plan.caption'), json_extract(j.payload_json,'$.publish.videoDesc')) END receiver_caption
         FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id
         WHERE i.batch_id IN (SELECT value FROM json_each(?)) AND i.deleted_at=0 ORDER BY i.id`).bind(ids),
       env.DB.prepare("SELECT g.*,j.status AS retry_status,j.auto_retry_count,j.available_at FROM psychology_publish_groups g LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id IN (SELECT value FROM json_each(?)) ORDER BY g.ordinal").bind(ids),

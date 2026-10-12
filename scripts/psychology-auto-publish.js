@@ -25,8 +25,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   const mediaType = String(input.mediaType || 'video');
   if (!Object.hasOwn(AUTO_TEMPLATES, mediaType)) fail('请选择图文或视频。');
   if(input.mentionReceiver!==undefined&&typeof input.mentionReceiver!=='boolean')fail('请选择是否 @ 承接账号。');
-  const videoHitMention=input.sourceType==='video-hits'&&mediaType==='video'&&input.template==='selected-video';
-  if(input.mentionReceiver===true&&((mediaType!=='photo'&&!videoHitMention)||input.libraryStrategy==='pools'||input.poolContext))fail('@承接账号仅用于手动创建的图文或二创成片任务。');
+  if(input.mentionReceiver===true&&(input.libraryStrategy==='pools'||input.poolContext))fail('@承接账号不用于账号池匹配任务。');
   const template = String(input.template || '');
   const hitVideos=input.sourceType==='video-hits'&&mediaType==='video'&&template==='selected-video',hitPhotos=input.sourceType==='video-hits'&&mediaType==='photo'&&template==='selected-photo';
   if (!hitVideos&&!hitPhotos&&!AUTO_TEMPLATES[mediaType].some(item => item.id === template)) fail('模板与内容类型不匹配。');

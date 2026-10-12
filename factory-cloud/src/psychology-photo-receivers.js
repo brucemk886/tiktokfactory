@@ -24,9 +24,9 @@ export function drawPhotoReceiver(pool,connectionId,random=Math.random){
 export function applyPhotoReceiverCaption(plan,receiver){
  if(!receiver)return plan;
  const base=String(plan?.caption||plan?.title||'').trim(),cta=receiver.cta;
- if(!base||typeof cta!=='string'||!cta.includes('@'+receiver.username))fail('图文引导文案不完整。');
+ if(!base||typeof cta!=='string'||!cta.includes('@'+receiver.username))fail('承接引导文案不完整。');
  const caption=base.endsWith(cta)?base:base+'\n\n'+cta;
- if(caption.length>2200)fail('追加承接引导后文案超过 2200 字，请缩短图文发布文案。');
+ if(caption.length>2200)fail('追加承接引导后文案超过 2200 字，请缩短发布文案。');
  return {...plan,caption};
 }
 export function photoReceiverGuard(db,user,pool){
