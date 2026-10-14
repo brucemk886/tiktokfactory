@@ -28,13 +28,13 @@ test("psychology workbench groups template navigation while preserving child per
   assert.equal(module?.group?.id, "psychology");
   assert.deepEqual(module?.roles, ["admin", "operator"]);
   const templates = SIDEBAR_MODULES.filter(item => ["psychology", "psychology-collage", "psychology-narrative", "psychology-photo"].includes(item.id));
-  assert.deepEqual(templates.map(item => item.label), ["模板工作台", "纸张拼贴模板", "单图互动测试模板", "图文发布模板"]);
+  assert.deepEqual(templates.map(item => item.label), ["模板中心", "纸张拼贴模板", "单图互动测试模板", "图文发布模板"]);
   assert.ok(templates.every(item => item.group.id === "psychology"));
   assert.equal(pageFileFor("/psychology-templates"), "psychology-templates.html");
   assert.equal(moduleIdForPath("/psychology-templates"), "psychology");
   assert.equal(moduleIdForPath("/psychology"), "psychology");
   assert.equal(canAccessPath({role:"operator",sidebarModules:[]}, "/psychology-templates"), false);
-  assert.deepEqual(templates.filter(item => !item.navigationParent).map(item => item.label), ["模板工作台"]);
+  assert.deepEqual(templates.filter(item => !item.navigationParent).map(item => item.label), ["模板中心"]);
   assert.ok(templates.slice(1).every(item => item.navigationParent === "psychology"));
   assert.equal(SIDEBAR_MODULES.some(item => item.group?.id === "mid-video" && item.id.startsWith("psychology")), false);
   assert.equal(moduleIdForPath("/psychology-narrative"), "psychology-narrative");

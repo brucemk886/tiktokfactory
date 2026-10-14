@@ -55,8 +55,8 @@ function syncTypeFilter(){
 function pageError(error){$('pageStatus').hidden=false;$('pageStatus').textContent=error.message;}
 function setupPage(){
  syncTypeFilter();
- const title=['sources','ready'].includes(view)?'视频爆款':view==='recreations'?'爆款二创':'二创详情';
- $('pageTitle').textContent=title;document.title=title+' · 心理学';
+ const title=['sources','ready'].includes(view)?'爆款素材库':view==='recreations'?'爆款二创':'二创详情';
+ $('pageTitle').textContent=title;document.title=title+' · 内容工厂';
  $('pageLead').textContent=view==='ready'?'查看已准备好的图文与视频，预览后创建发布任务。':view==='sources'?'原选题长期保留，每个来源最多同时保留 20 个未清理二创；发布清理后可持续新建。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
  $('hitHomeTabs').hidden=!['sources','ready'].includes(view);$('readyHomeTab').setAttribute('aria-current',view==='ready'?'page':'false');$('sourceHomeTab').setAttribute('aria-current',view==='sources'?'page':'false');
  $('pageBreadcrumb').hidden=['sources','ready'].includes(view);$('breadcrumbCurrent').textContent=title;

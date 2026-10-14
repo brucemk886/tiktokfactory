@@ -25,23 +25,24 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("photo-factory-templates", "/photo-factory/templates", "模板工作台", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("photo-factory-autopilot", "/photo-factory/autopilot", "自动运营", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("photo-factory-reports", "/photo-factory/reports", "运营报表", ["admin"], {id:"photo-factory",label:"图文工厂"}),
-  moduleItem("psychology-video-hits", "/psychology-video-hits", "视频爆款", ALL, psychologyGroup()),
-  moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ALL, psychologyGroup()),
-  moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ALL, psychologyGroup(), "psychology-copy-library"),
-  moduleItem("psychology-production", "/psychology-production", "爆款复刻", ALL, psychologyGroup(), "psychology-publish-sources"),
-  moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
+  moduleItem("psychology-video-hits", "/psychology-video-hits", "爆款素材库", ALL, psychologyGroup()),
+  moduleItem("psychology", "/psychology-templates", "模板中心", ALL, psychologyGroup()),
   moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ALL, psychologyGroup(), "psychology"),
   moduleItem("psychology-narrative", "/psychology-target-2", "单图互动测试模板", ALL, psychologyGroup(), "psychology"),
   moduleItem("psychology-photo", "/psychology-photo", "图文发布模板", ALL, psychologyGroup(), "psychology"),
-  moduleItem("psychology-topic-bank", "/psychology-topic-bank", "模板题库", ALL, psychologyGroup()),
+  moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ALL, psychologyGroup()),
+  moduleItem("psychology-publish", "/psychology-publish", "发布", ALL, psychologyGroup()),
+  moduleItem("psychology-comments", "/psychology-comments", "定时评论", ALL, psychologyGroup()),
+  moduleItem("psychology-autopilot", "/psychology-autopilot", "自动运营", ALL, psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
   moduleItem("psychology-website", "/psychology-website", "独立站转化", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
-  moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ALL, psychologyGroup()),
-  moduleItem("psychology-autopilot", "/psychology-autopilot", "自动运营", ALL, psychologyGroup()),
-  moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ALL, psychologyGroup()),
-  moduleItem("psychology-comments", "/psychology-comments", "定时评论", ALL, psychologyGroup()),
-  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "心理学发布记录", ALL, psychologyGroup()),
+  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "发布记录", ALL, psychologyGroup()),
+  // 以下功能计划下线（见 docs/handoffs/2026-10-14-content-factory-rename.md），暂保留以免影响已有任务和权限。
+  moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ALL, psychologyGroup(), "psychology-copy-library"),
+  moduleItem("psychology-production", "/psychology-production", "爆款复刻", ALL, psychologyGroup(), "psychology-publish-sources"),
+  moduleItem("psychology-topic-bank", "/psychology-topic-bank", "模板题库", ALL, psychologyGroup(), "psychology"),
+  moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ALL, psychologyGroup(), "psychology-publish"),
   moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ALL, officialChannelGroup()),
   moduleItem("official-analytics", "/official-analytics", "授权账号数据", ALL, officialChannelGroup()),
   moduleItem("official-publish-records", "/official-publish-records", "官方发布记录", ALL, officialChannelGroup()),
@@ -160,7 +161,7 @@ function novelPromotionGroup() {
 }
 
 function psychologyGroup() {
-  return Object.freeze({ id: "psychology", label: "心理学" });
+  return Object.freeze({ id: "psychology", label: "内容工厂" });
 }
 
 function officialChannelGroup() {

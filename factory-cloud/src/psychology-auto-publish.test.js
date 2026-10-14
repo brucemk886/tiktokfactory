@@ -646,7 +646,7 @@ test('source trace lists account posts against peer urls and published links', a
   const page=fs.readFileSync(new URL('../../public/psychology-publish-sources.html',import.meta.url),'utf8');
   const browser=fs.readFileSync(new URL('../../public/psychology-publish-sources.js',import.meta.url),'utf8');
   assert.equal(pageFileFor('/psychology-publish-sources'),'psychology-publish-sources.html');
-  assert.match(page,/心理学发布记录/);assert.match(page,/对标爆款/);assert.match(browser,/打开爆款原帖/);
+  assert.match(page,/发布记录 · 内容工厂/);assert.match(page,/对标爆款/);assert.match(browser,/打开爆款原帖/);
   assert.match(page,/id="mediaType"/);
   assert.match(browser,/\/api\/psychology-auto-publish\/sources/);
   assert.match(fs.readFileSync(new URL('../../public/psychology-publish-sources.css',import.meta.url),'utf8'),/cursor:not-allowed/);
