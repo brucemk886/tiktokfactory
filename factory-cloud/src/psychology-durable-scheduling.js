@@ -198,8 +198,20 @@ export async function processScheduleMessage(env,message,options={}){
  if(!saved||['done','failed'].includes(saved.status)){message.ack();return;}
  if(saved.available_at>now){message.retry({delaySeconds:Math.max(1,Math.ceil((saved.available_at-now)/1000))});return;}
  const token=crypto.randomUUID();
- const claim=await db.prepare("UPDATE psychology_schedule_work SET status='running',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=? AND (status='queued' OR status='running' AND lease_until<=?)").bind(token,now+SCHEDULE_POLICY.leaseMs,id,now).run();
- if(!claim.meta?.changes){message.ack();return;}
+ // Concurrent consumers may work on different owners, while work sharing an
+ // owner stays serial because its allocation revision is shared. Maintenance
+ // remains globally exclusive. D1 serializes this conditional claim.
+ const claim=await db.prepare("UPDATE psychology_schedule_work SET status='running',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=? AND (status='queued' OR status='running' AND lease_until<=?) AND NOT EXISTS(SELECT 1 FROM psychology_schedule_work active WHERE active.id<>? AND active.status='running' AND active.lease_until>? AND (?='maintenance' OR active.kind='maintenance' OR active.owner=?))").bind(token,now+SCHEDULE_POLICY.leaseMs,id,now,id,now,saved.kind,saved.owner).run();
+ if(!claim.meta?.changes){
+  const current=await db.prepare('SELECT status,lease_until FROM psychology_schedule_work WHERE id=?').bind(id).first();
+  if(current?.status==='queued'){
+   // Re-enqueue as a fresh delivery so waiting behind a long owner job does not
+   // consume this message's retry budget and accidentally enter the DLQ.
+   try{await env.SCHEDULE_QUEUE.send({id},{delaySeconds:30});message.ack();}
+   catch{message.retry({delaySeconds:60});}
+  }else message.ack();
+  return;
+ }
  const w={...saved,lease_token:token,lease_until:now+SCHEDULE_POLICY.leaseMs,attempts:saved.attempts+1};
  try{
   if(w.attempts>SCHEDULE_POLICY.maxAttempts)throw new Error('连续执行中断，已停止自动重试，请查看排期保障');

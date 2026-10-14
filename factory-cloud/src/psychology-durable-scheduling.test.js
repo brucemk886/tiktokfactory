@@ -54,6 +54,28 @@ test('expired leases resume while obsolete tokens cannot commit jobs',async t=>{
  assert.throws(()=>f.sqlite.prepare('INSERT INTO psychology_schedule_commits VALUES(?,?,?,?)').run('bad',f.w.id,'old',f.now),/SCHEDULER_LEASE_LOST/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);
 });
+test('concurrent consumers serialize one owner but allow another owner to run',async t=>{
+ const f=await setup(t),blocked=msg(f.w.id);let ran=false;
+ f.sqlite.prepare("INSERT INTO psychology_schedule_work(id,owner,kind,window_at,status,lease_token,lease_until,created_at,updated_at) VALUES('blocker','admin','slot',?,'running','active',?,?,?)").run(f.now,f.now+60000,f.now,f.now);
+ await processScheduleMessage(f.env,blocked,{now:f.now,step:async()=>{ran=true;}});
+ assert.equal(ran,false);assert.equal(blocked.acked,true);assert.equal(blocked.retried,undefined);
+ assert.deepEqual(f.env.SCHEDULE_QUEUE.messages.at(-1),{id:f.w.id});
+ assert.equal(f.sqlite.prepare('SELECT status FROM psychology_schedule_work WHERE id=?').get(f.w.id).status,'queued');
+
+ f.sqlite.prepare("UPDATE psychology_schedule_work SET owner='other',kind='maintenance' WHERE id='blocker'").run();
+ ran=false;const maintenanceBlocked=msg(f.w.id);
+ await processScheduleMessage(f.env,maintenanceBlocked,{now:f.now,step:async()=>{ran=true;}});
+ assert.equal(ran,false);assert.equal(maintenanceBlocked.acked,true);
+
+ f.sqlite.prepare("UPDATE psychology_schedule_work SET kind='slot' WHERE id='blocker'").run();
+ const allowed=msg(f.w.id);
+ await processScheduleMessage(f.env,allowed,{now:f.now,step:async(env,w)=>{
+  ran=true;
+  await env.DB.prepare("UPDATE psychology_schedule_work SET status='done',lease_token='',lease_until=0 WHERE id=? AND lease_token=?").bind(w.id,w.lease_token).run();
+ }});
+ assert.equal(ran,true);assert.equal(allowed.acked,true);
+});
+
 test('a crash after atomic creation is reconciled without replaying the publish batch',async t=>{
  const f=await setup(t);
  await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});

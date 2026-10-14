@@ -89,6 +89,15 @@
   "browser": {
     "binding": "PHOTO_BROWSER"
   },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true
+    }
+  },
   "queues": {
     "producers": [
       {
@@ -111,7 +120,8 @@
         "max_batch_timeout": 1,
         "max_concurrency": 20,
         "max_retries": 3,
-        "retry_delay": 60
+        "retry_delay": 60,
+        "dead_letter_queue": "factory-psychology-photo-dlq"
       },
       {
         "queue": "factory-psychology-replies",
@@ -119,15 +129,17 @@
         "max_batch_timeout": 1,
         "max_concurrency": 5,
         "max_retries": 3,
-        "retry_delay": 60
+        "retry_delay": 60,
+        "dead_letter_queue": "factory-psychology-replies-dlq"
       },
       {
         "queue": "factory-psychology-schedule",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
-        "max_concurrency": 1,
-        "max_retries": 20,
-        "retry_delay": 60
+        "max_concurrency": 3,
+        "max_retries": 7,
+        "retry_delay": 60,
+        "dead_letter_queue": "factory-psychology-schedule-dlq"
       }
     ]
   },

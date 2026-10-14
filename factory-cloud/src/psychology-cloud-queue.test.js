@@ -112,6 +112,16 @@ test('probe requires worker authentication and queue concurrency stays inside th
   const cfg=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url)));
   assert.equal(cfg.queues.consumers[0].max_concurrency,20);assert.equal(cfg.queues.consumers[0].max_batch_size,1);
   assert.ok(cfg.queues.consumers[0].max_concurrency<=200); // Browser Run allows 200 concurrent sessions per account
+  const byQueue=new Map(cfg.queues.consumers.map(consumer=>[consumer.queue,consumer]));
+  assert.equal(byQueue.get('factory-psychology-photo').dead_letter_queue,'factory-psychology-photo-dlq');
+  assert.equal(byQueue.get('factory-psychology-replies').dead_letter_queue,'factory-psychology-replies-dlq');
+  assert.deepEqual({
+    concurrency:byQueue.get('factory-psychology-schedule').max_concurrency,
+    retries:byQueue.get('factory-psychology-schedule').max_retries,
+    deadLetter:byQueue.get('factory-psychology-schedule').dead_letter_queue
+  },{concurrency:3,retries:7,deadLetter:'factory-psychology-schedule-dlq'});
+  assert.equal(cfg.observability.enabled,true);assert.equal(cfg.observability.logs.enabled,true);
+  assert.equal(cfg.observability.logs.invocation_logs,true);assert.equal(cfg.observability.logs.head_sampling_rate,1);
 });
 
 test('six checkpointed images traverse real cloud upload and grouped submission with mocked hub',async t=>{

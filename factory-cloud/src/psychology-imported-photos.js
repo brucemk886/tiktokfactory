@@ -137,14 +137,14 @@ export async function runImportedPhotos(env,owner,{now=Date.now(),directory}={})
    await createHitPhotoBatch(env,user,batchConfig,batchId,scope.accounts,{beforeStatements,caption:copy.caption,conversion:{...receiver,connectionId:id,receiverConnectionId:receiver.connectionId,cta:copy.cta,revision:setting.revision},deferDispatch:true});created++;
   }
   detail=created?'本轮已安排 '+created+' 条图文；不足的时段会在截止前继续检查。'+(detail?' '+detail:''):detail||'当前时段已安排，等待下一个北京时间发布时段。';
- }catch(e){detail=String(e.message||e).slice(0,500);}
+  }catch(e){detail=String(e.message||e).replace(/Bearer\s+\S+/gi,'Bearer [redacted]').slice(0,500);console.error(JSON.stringify({event:'psychology-imported-photo-run-failed',owner,error:detail}));}
  finally{
   await db.prepare("UPDATE psychology_imported_photo_settings SET lease_token='',lease_until=0,checked_at=?,detail=?,scan_cursor=? WHERE owner=? AND lease_token=?").bind(now,detail.slice(0,600),lastScanned,owner,token).run();
  }
- if(created)try{await dispatchCloudPhotos(env);}catch{/* minute queue recovery owns committed jobs */}
+ if(created)try{await dispatchCloudPhotos(env);}catch(e){console.warn(JSON.stringify({event:'psychology-imported-photo-dispatch-deferred',owner,error:String(e?.message||e).replace(/Bearer\s+\S+/gi,'Bearer [redacted]').slice(0,1000)}));/* minute queue recovery owns committed jobs */}
  return {created,detail};
 }
 export async function consumeImportedPhotoMessage(env,message){
  if(typeof message.body?.owner!=='string'){message.ack();return;}
- try{await runImportedPhotos(env,message.body.owner);message.ack();}catch{message.retry({delaySeconds:60});}
+ try{await runImportedPhotos(env,message.body.owner);message.ack();}catch(error){const diagnostic=String(error?.message||error).replace(/Bearer\s+\S+/gi,'Bearer [redacted]').slice(0,1000);console.error(JSON.stringify({event:'psychology-imported-photo-queue-failed',owner:message.body.owner,error:diagnostic}));message.retry({delaySeconds:60});}
 }

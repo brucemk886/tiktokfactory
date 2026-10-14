@@ -150,6 +150,6 @@ export async function dispatchAutoReplies(env){
 export async function consumeAutoReplies(batch,env){
  for(const message of batch.messages){
   if(typeof message.body?.watchId!=='string'){message.ack();continue;}
-  try{await runAutoReplies(env,{watchId:message.body.watchId});message.ack();}catch{message.retry({delaySeconds:60});}
+   try{await runAutoReplies(env,{watchId:message.body.watchId});message.ack();}catch(error){const diagnostic=String(error?.message||error).replace(/Bearer\s+\S+/gi,'Bearer [redacted]').slice(0,1000);console.error(JSON.stringify({event:'psychology-auto-reply-queue-failed',watchId:message.body.watchId,error:diagnostic}));message.retry({delaySeconds:60});}
  }
 }
