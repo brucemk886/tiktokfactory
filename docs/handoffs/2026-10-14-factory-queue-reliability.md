@@ -25,7 +25,13 @@ Prevent exhausted Factory queue deliveries from disappearing, increase durable s
 - `git diff --check`: passed before documentation update and must be rerun before commit.
 
 ## Unfinished work
-- Production deployment and a short post-deploy verification remain.
+- None for this change. Feishu alert delivery remains a separate deferred task by user choice.
+
+## Production verification
+- Commit `01f7e45` was pushed to `main` and deployed through `factory-cloud/npm run deploy`.
+- Cloudflare Worker version: `f2d740c0-f1e4-457d-8bb6-d6c6259a31f7`.
+- Production `/api/health` returned `ok: true`.
+- `wrangler queues list` confirmed all three DLQs exist. Consumer inspection confirmed photo `3/20`, replies `3/5`, and schedule `7/3` for max retries/concurrency, each with its configured DLQ.
 
 ## Recommended next step
-Push the clean commit to `main`, deploy only through `npm run deploy` from `factory-cloud`, then verify the deployed consumer settings and Worker Logs.
+Review Workers Logs and the three DLQs when a production incident occurs; failed messages remain available for manual inspection during Cloudflare's DLQ retention window.
