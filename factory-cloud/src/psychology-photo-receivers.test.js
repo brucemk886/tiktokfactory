@@ -39,13 +39,13 @@ test('receiver pool reads only current owner saved settings, fresh grants, linke
  f.accounts[2].scopes=['video.publish'];f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other' WHERE account_key='tiktok:c'").run();assert.deepEqual((await photoReceiverPool(f.env,actor)).receivers,[]);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();await assert.rejects(photoReceiverPool(f.env,actor),e=>e.statusCode===403);assert.equal(f.jobs().length,0);assert.equal(f.requests.length,0);
 });
-test('draw excludes self, uses the full remaining pool, preserves content and appends CTA once with length checks',()=>{
+test('draw excludes self, uses the full remaining pool, preserves content and appends CTA once and shortens overlong captions',()=>{
  const pool={revision:7,receivers:[{connectionId:'a',username:'alpha'},{connectionId:'b',username:'beta'},{connectionId:'c',username:'gamma'}],mention:'Visit {account}.'};
  const first=drawPhotoReceiver(pool,'a',()=>0),last=drawPhotoReceiver(pool,'a',()=>0.999);assert.equal(first.username,'beta');assert.equal(last.username,'gamma');assert.equal(first.settingsRevision,7);
  assert.throws(()=>drawPhotoReceiver({...pool,receivers:[pool.receivers[0]]},'a'),/其他可用/);
  const original={title:'Source title',caption:'Original caption',scenes:[{body:'Original body'}]},copy=applyPhotoReceiverCaption(original,first);
  assert.equal(copy.caption,'Original caption\n\nVisit @beta.');assert.deepEqual(copy.scenes,original.scenes);assert.equal(original.caption,'Original caption');assert.deepEqual(applyPhotoReceiverCaption(copy,first),copy);
- assert.throws(()=>applyPhotoReceiverCaption({caption:'x'.repeat(2199)},first),/2200/);assert.equal(applyPhotoReceiverCaption(original,null),original);
+ const long=applyPhotoReceiverCaption({caption:'x'.repeat(2199)},first);assert.ok(long.caption.length<=2200);assert.ok(long.caption.endsWith('…\n\nVisit @beta.'));assert.deepEqual(applyPhotoReceiverCaption(long,first),long);assert.equal(applyPhotoReceiverCaption(original,null),original);
 });
 test('selected photos independently freeze a receiver per item, expose final copy, and replay without re-drawing or changing source',async t=>{
  const f=await setup(t);f.settings();const refs=[await f.ready(),await f.ready()],body=photoInput(refs,{mentionReceiver:true});let draws=0;t.mock.method(Math,'random',()=>draws++===0?0:0.999);

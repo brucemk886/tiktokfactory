@@ -30,8 +30,8 @@ test('Beijing schedule crosses midnight without converting to device time or bac
  assert.equal(importedPhotoSlots(now,now+3600000,late).length,0);
  assert.equal(importedPhotoSlots(Date.parse('2026-10-09T17:30:00Z'))[0],Date.parse('2026-10-09T19:30:00Z'));
 });
-test('CTA is appended once, preserves source, uses self bio and rejects overflow',()=>{
- const r={connectionId:'b',username:'target_b',linkReady:true},s='Saved caption',a=importedPhotoCaption(s,'a',r);assert.match(a.caption,/@target_b/);assert.equal(a.caption,s+'\n\n'+a.cta);assert.deepEqual(importedPhotoCaption(a.caption,'a',r),a);assert.match(importedPhotoCaption(s,'b',r).caption,/my bio/);assert.throws(()=>importedPhotoCaption('x'.repeat(2200),'a',r),/2200/);
+test('CTA is appended once, preserves source, uses self bio and shortens overflow',()=>{
+ const r={connectionId:'b',username:'target_b',linkReady:true},s='Saved caption',a=importedPhotoCaption(s,'a',r);assert.match(a.caption,/@target_b/);assert.equal(a.caption,s+'\n\n'+a.cta);assert.deepEqual(importedPhotoCaption(a.caption,'a',r),a);assert.match(importedPhotoCaption(s,'b',r).caption,/my bio/);{const long=importedPhotoCaption('x'.repeat(2200),'a',r);assert.ok(long.caption.length<=2200);assert.ok(long.caption.endsWith('…\n\n'+long.cta));}
 });
 test('configuration defaults off, validates scope/link confirmation, CAS and explicit enable',async t=>{
  const f=await setup(t);const read=await f.call();assert.equal(read.data.enabled,false);assert.equal(read.data.revision,0);assert.deepEqual(read.data.config.connectionIds,[]);
@@ -107,11 +107,11 @@ test('independent receiver/CTA settings preserve publishing state, reject cross-
  assert.equal((await f.call('PATCH',{revision:4,section:'receivers',receivers:f.config.receivers,enabled:false})).status,400);
  assert.equal((await f.call('PATCH',{revision:4,section:'cta'})).status,400);assert.equal((await f.call('PATCH',{revision:3,section:'cta',cta:newer})).status,409);
 });
-test('custom templates enforce exactly one dynamic account and total caption length',()=>{
+test('custom templates enforce exactly one dynamic account and shorten overlong captions',()=>{
  const receiver={connectionId:'b',username:'target_b',linkReady:true};
  for(const mention of ['', 'No account', '{account} and {account}', '@fixed {account}', '{account} {unknown}'])assert.throws(()=>normalizeImportedPhotoCTA({...DEFAULT_IMPORTED_PHOTO_CTA,mention}));
  assert.throws(()=>normalizeImportedPhotoCTA({...DEFAULT_IMPORTED_PHOTO_CTA,self:'Hello {account}'}));
- const cta={mention:'Read more at {account}.',self:'Read more via my bio.'},copy=importedPhotoCaption('Original','a',receiver,cta);assert.equal(copy.caption,'Original\n\nRead more at @target_b.');assert.deepEqual(importedPhotoCaption(copy.caption,'a',receiver,cta),copy);assert.throws(()=>importedPhotoCaption('a'.repeat(2190),'a',receiver,cta),/2200/);
+ const cta={mention:'Read more at {account}.',self:'Read more via my bio.'},copy=importedPhotoCaption('Original','a',receiver,cta);assert.equal(copy.caption,'Original\n\nRead more at @target_b.');assert.deepEqual(importedPhotoCaption(copy.caption,'a',receiver,cta),copy);{const long=importedPhotoCaption('a'.repeat(2190),'a',receiver,cta);assert.ok(long.caption.length<=2200);assert.ok(long.caption.endsWith('…\n\nRead more at @target_b.'));}
 });
 test('website receiving endpoint uses its own grant and cannot enable/pause or expose photo inventory',async t=>{
  const f=await setup(t);f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[\"psychology-website\"]',role='operator'").run();

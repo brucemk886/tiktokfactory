@@ -3,6 +3,7 @@ import {publishAccountDirectory} from './psychology-account-access.js';
 import {toPublicUser} from './auth.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
 import {normalizeImportedPhotoCTA} from '../../scripts/psychology-imported-photo-policy.js';
+import {fitCaptionWithCTA} from '../../scripts/psychology-caption-fit.js';
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 // Consume the current operator's saved receivers; this never enables automatic operations.
 export async function photoReceiverPool(env,actor,directory){
@@ -25,8 +26,8 @@ export function applyPhotoReceiverCaption(plan,receiver){
  if(!receiver)return plan;
  const base=String(plan?.caption||plan?.title||'').trim(),cta=receiver.cta;
  if(!base||typeof cta!=='string'||!cta.includes('@'+receiver.username))fail('承接引导文案不完整。');
- const caption=base.endsWith(cta)?base:base+'\n\n'+cta;
- if(caption.length>2200)fail('追加承接引导后文案超过 2200 字，请缩短发布文案。');
+ const {caption,truncated}=fitCaptionWithCTA(base,cta);
+ if(truncated)console.warn(JSON.stringify({event:'receiver-caption-truncated',receiver:receiver.username,originalLength:base.length,finalLength:caption.length}));
  return {...plan,caption};
 }
 export function photoReceiverGuard(db,user,pool){

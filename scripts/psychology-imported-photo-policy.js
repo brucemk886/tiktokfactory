@@ -1,3 +1,4 @@
+import {fitCaptionWithCTA} from './psychology-caption-fit.js';
 // All values below are publication instants, independent of browser or worker timezone.
 export const IMPORTED_PHOTO_TIMES=['22:30','01:30','03:30'];
 export const IMPORTED_PHOTO_ZONE='Asia/Shanghai';
@@ -28,7 +29,9 @@ export function normalizeImportedPhotoCTA(value=DEFAULT_IMPORTED_PHOTO_CTA){
 export function importedPhotoCaption(caption,connectionId,receiver,templates){
  if(!receiver?.linkReady||!receiver.connectionId||!/^\w[\w.]{0,23}$/.test(receiver.username||''))throw Error('请配置有效承接账号并确认主页测试链接。');
  const copy=normalizeImportedPhotoCTA(templates),cta=connectionId===receiver.connectionId?copy.self:copy.mention.replace('{account}','@'+receiver.username);
- const base=String(caption||'').trim(),result=base.endsWith(cta)?base:[base,cta].filter(Boolean).join('\n\n');
- if(!base)throw Error('二创发布文案为空。');if(result.length>2200)throw Error('加上测试引导后文案超过 2200 字，请缩短二创文案。');
+ const base=String(caption||'').trim();
+ if(!base)throw Error('二创发布文案为空。');
+ const {caption:result,truncated}=fitCaptionWithCTA(base,cta);
+ if(truncated)console.warn(JSON.stringify({event:'imported-photo-caption-truncated',receiver:receiver.username,originalLength:base.length,finalLength:result.length}));
  return {caption:result,cta};
 }
